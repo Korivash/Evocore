@@ -1,0 +1,225 @@
+# 📋 Discord Bot Deployment Checklist
+
+Use this checklist to ensure a smooth deployment on your Windows VPS (45.141.24.144)
+
+## ☑️ Pre-Deployment
+
+### 1. Software Installation
+- [ ] Node.js installed (v16+)
+  - Download: https://nodejs.org/
+  - Verify: Open CMD and run `node --version`
+  
+- [ ] MySQL installed and running
+  - Download: https://dev.mysql.com/downloads/mysql/
+  - Or install XAMPP/WAMP
+  - Verify: Open MySQL Command Line Client
+  
+- [ ] PM2 installed globally (for production)
+  - Run: `npm install -g pm2`
+  - Verify: `pm2 --version`
+
+### 2. API Keys & Credentials
+- [ ] Discord Bot Token obtained
+  - Go to: https://discord.com/developers/applications
+  - Create application → Add Bot → Copy Token
+  - Enable intents: Message Content, Server Members, Presence
+  
+- [ ] MySQL root password ready
+  - Know your MySQL root password
+  
+- [ ] (Optional) Blizzard API credentials
+  - Go to: https://develop.battle.net/
+  - Create client → Copy ID and Secret
+  
+- [ ] (Optional) Gemini API key
+  - Go to: https://makersuite.google.com/app/apikey
+  - Create key → Copy
+
+## ☑️ Installation Steps
+
+### 3. Extract Files
+- [ ] Extract discord-bot.zip to `C:\DiscordBot\`
+- [ ] Verify all folders exist:
+  - [ ] commands/
+  - [ ] database/
+  - [ ] events/
+  - [ ] utils/
+  - [ ] .env.example file exists
+
+### 4. Database Setup
+- [ ] Open MySQL Command Line or Workbench
+- [ ] Run: `CREATE DATABASE discord_bot;`
+- [ ] Verify: `SHOW DATABASES;` (should see discord_bot)
+- [ ] (Optional) Run database_setup.sql for manual table creation
+
+### 5. Configuration
+- [ ] Copy .env.example to .env
+  - In CMD: `copy .env.example .env`
+  
+- [ ] Edit .env file with your credentials:
+  - [ ] DISCORD_TOKEN=your_actual_token
+  - [ ] DB_HOST=localhost
+  - [ ] DB_USER=root (or your MySQL user)
+  - [ ] DB_PASSWORD=your_mysql_password
+  - [ ] DB_NAME=discord_bot
+  - [ ] (Optional) BLIZZARD_CLIENT_ID
+  - [ ] (Optional) BLIZZARD_CLIENT_SECRET
+  - [ ] (Optional) GEMINI_API_KEY
+
+### 6. Install Dependencies
+- [ ] Open Command Prompt in C:\DiscordBot\
+- [ ] Run: `npm install`
+- [ ] Wait for installation to complete (may take 1-2 minutes)
+- [ ] Verify: node_modules folder should exist with ~90 packages
+
+## ☑️ Testing
+
+### 7. Test Run
+- [ ] Run: `node index.js`
+- [ ] Check for success messages:
+  - [ ] "Bot is ready! Logged in as [BotName]"
+  - [ ] "Database connected successfully"
+  - [ ] "Successfully reloaded X application (/) commands"
+  
+- [ ] If errors appear:
+  - [ ] Check .env file for typos
+  - [ ] Verify MySQL is running
+  - [ ] Check logs/error.log for details
+
+### 8. Discord Invitation
+- [ ] Get your bot's Client ID from Developer Portal
+- [ ] Create invite URL:
+  ```
+  https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=8&scope=bot%20applications.commands
+  ```
+- [ ] Visit the URL and invite bot to your test server
+- [ ] Verify bot appears online in server
+
+### 9. First Commands
+- [ ] In Discord, run: `/help`
+  - [ ] Should see command list
+  
+- [ ] Run: `/setup`
+  - [ ] Should see setup completion message
+  
+- [ ] Run: `/config view`
+  - [ ] Should see current configuration
+  
+- [ ] Test a moderation command: `/kick @user test`
+  - [ ] Should work (or show permission error if no perms)
+
+## ☑️ Production Deployment
+
+### 10. PM2 Setup
+- [ ] Stop test run (Ctrl+C)
+- [ ] Run: `pm2 start index.js --name discord-bot`
+- [ ] Verify: `pm2 status` shows bot running
+- [ ] Run: `pm2 save`
+- [ ] Run: `pm2 startup` (follow the command it shows)
+- [ ] Test reboot: Restart your VPS, bot should auto-start
+
+### 11. Monitoring Setup
+- [ ] Test PM2 commands:
+  - [ ] `pm2 logs discord-bot` (shows live logs)
+  - [ ] `pm2 monit` (shows resource usage)
+  - [ ] `pm2 restart discord-bot` (restarts bot)
+  
+- [ ] Check log files in C:\DiscordBot\logs\
+  - [ ] combined.log exists
+  - [ ] error.log exists
+
+## ☑️ Server Configuration
+
+### 12. Discord Server Setup
+For each server where the bot is added:
+- [ ] Run `/setup` as administrator
+- [ ] Set mod log channel: `/setup mod-log:#channel`
+- [ ] Set welcome channel: `/setup welcome:#channel`
+- [ ] Set mute role: `/setup mute-role:@Muted`
+- [ ] Create @Muted role if it doesn't exist:
+  - [ ] Create role named "Muted"
+  - [ ] Deny "Send Messages" in all channels
+  
+### 13. Enable Features
+- [ ] Run `/config automod enabled:true`
+- [ ] Run `/config automod anti-spam:true`
+- [ ] Run `/config automod anti-link:true` (if desired)
+- [ ] Set warning threshold: `/config warnings max-warnings:3`
+- [ ] Customize welcome: `/config welcome message:Welcome {user}!`
+
+## ☑️ Optional Features
+
+### 14. Blizzard API (if configured)
+- [ ] Test: `/wow-token`
+- [ ] Should show current token price
+- [ ] Test: `/wow-character realm-name character-name`
+- [ ] Should show character info
+
+### 15. AI Features (if configured)
+- [ ] Test: `/ask What is Discord?`
+- [ ] Should get AI response
+- [ ] Test: `/chat Hello!`
+- [ ] Should start conversation
+
+## ☑️ Security & Maintenance
+
+### 16. Security Checklist
+- [ ] .env file is NOT committed to version control
+- [ ] Strong MySQL password is set
+- [ ] Bot token is kept secret
+- [ ] Firewall is enabled on VPS
+- [ ] Regular Windows updates are enabled
+
+### 17. Backup Plan
+- [ ] Create database backup command:
+  ```
+  mysqldump -u root -p discord_bot > backup.sql
+  ```
+- [ ] Schedule weekly backups (Task Scheduler)
+- [ ] Keep backup of .env file (securely)
+- [ ] Keep backup of bot files
+
+### 18. Monitoring
+- [ ] Check bot daily: `pm2 status`
+- [ ] Review logs weekly: `pm2 logs discord-bot`
+- [ ] Monitor MySQL disk space
+- [ ] Check Windows Event Viewer for errors
+
+## ☑️ Troubleshooting Reference
+
+### Common Issues:
+- **Bot offline**: Check `pm2 logs discord-bot`, verify token
+- **Commands not working**: Wait 1-2 min for Discord sync, check `/setup` was run
+- **Database errors**: Verify MySQL running, check credentials
+- **High memory**: Normal up to 500MB, restart if above 1GB
+- **API errors**: Check API keys, verify internet connection
+
+### Support Files:
+- [ ] README.md - Full documentation
+- [ ] DEPLOYMENT.md - Detailed deployment guide
+- [ ] QUICK-START.txt - Quick reference
+- [ ] PACKAGE-SUMMARY.txt - Feature overview
+
+## 🎉 Deployment Complete!
+
+Once all items are checked, your bot is:
+- ✅ Running 24/7 on your VPS
+- ✅ Auto-starting on Windows boot
+- ✅ Moderating your Discord servers
+- ✅ Providing Blizzard game lookups
+- ✅ Offering AI-powered chat
+- ✅ Tracking user levels and XP
+- ✅ Logging all actions
+
+**Next Steps:**
+1. Invite bot to your other servers
+2. Run `/setup` in each server
+3. Customize settings per server
+4. Monitor performance with `pm2 monit`
+5. Enjoy your fully automated Discord bot!
+
+---
+
+Need help? Check the logs first: `pm2 logs discord-bot --lines 100`
+
+Last Updated: October 22, 2025

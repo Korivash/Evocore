@@ -1,0 +1,234 @@
+# Discord Bot - Quick Start Guide
+
+## 🚀 What's Included
+
+This is a fully-featured Discord bot with:
+- ✅ Complete moderation system (kick, ban, mute, warn)
+- ✅ Auto-moderation (spam, links, invites, bad words)
+- ✅ Blizzard API integration (WoW, Overwatch, Diablo 4, etc.)
+- ✅ Gemini AI integration (chat, Q&A, translation)
+- ✅ XP and leveling system
+- ✅ Custom commands per server
+- ✅ Multi-guild support with per-server configuration
+- ✅ Comprehensive logging and statistics
+- ✅ MySQL database for persistent data
+
+## 📦 What You Need
+
+### Required:
+1. **Discord Bot Token** - Get from https://discord.com/developers/applications
+2. **MySQL Database** - Will be set up on your VPS
+3. **Node.js** (v16+) - Will be installed on your VPS
+
+### Optional (for full features):
+4. **Blizzard API Credentials** - Get from https://develop.battle.net/
+5. **Gemini API Key** - Get from https://makersuite.google.com/app/apikey
+
+## 🎯 Quick Setup (3 Steps)
+
+### Step 1: Extract and Install
+```cmd
+1. Extract discord-bot.zip to C:\DiscordBot\
+2. Open Command Prompt in that folder
+3. Run: npm install
+```
+
+### Step 2: Configure .env File
+```cmd
+1. Copy .env.example to .env
+2. Edit .env with your credentials:
+   - DISCORD_TOKEN (Required)
+   - Database credentials (Required)
+   - API keys (Optional)
+```
+
+### Step 3: Run the Bot
+```cmd
+node index.js
+```
+
+## 🔑 Getting Your Discord Bot Token
+
+1. Go to https://discord.com/developers/applications
+2. Click "New Application"
+3. Go to "Bot" section
+4. Click "Add Bot"
+5. Enable these Privileged Gateway Intents:
+   - ✅ Presence Intent
+   - ✅ Server Members Intent
+   - ✅ Message Content Intent
+6. Click "Reset Token" and copy it
+7. Paste it in your .env file as DISCORD_TOKEN
+
+## 🔗 Inviting Your Bot
+
+Use this URL (replace YOUR_CLIENT_ID):
+```
+https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=8&scope=bot%20applications.commands
+```
+
+Get YOUR_CLIENT_ID from the "General Information" tab in Discord Developer Portal.
+
+## 🛠️ First-Time Server Setup
+
+After inviting the bot:
+1. Run: `/setup` (must have Administrator permission)
+2. Configure your preferences:
+   - `/setup mod-log:#channel` - Set moderation log channel
+   - `/setup welcome:#channel` - Set welcome channel
+   - `/setup mute-role:@role` - Set mute role
+3. View settings: `/config view`
+
+## 📚 Essential Commands
+
+- `/help` - List all commands
+- `/setup` - Initial server configuration (Admin only)
+- `/config` - Manage bot settings (Admin only)
+- `/kick @user` - Kick a member
+- `/ban @user` - Ban a member
+- `/warn @user reason` - Warn a member
+- `/wow-character realm name` - Look up WoW character
+- `/ask question` - Ask AI a question
+- `/level` - Check your XP and level
+
+## 💾 Database Setup
+
+The bot will automatically create all necessary tables. Just make sure:
+1. MySQL is running on your VPS
+2. You've created the database: `CREATE DATABASE discord_bot;`
+3. Your .env has correct DB credentials
+
+## 🔧 Running 24/7 on Windows VPS
+
+### Using PM2 (Recommended):
+```cmd
+npm install -g pm2
+pm2 start index.js --name discord-bot
+pm2 save
+pm2 startup
+```
+
+Now the bot will:
+- ✅ Auto-restart if it crashes
+- ✅ Start automatically when Windows boots
+- ✅ Run in the background
+
+## 📊 Monitoring Your Bot
+
+```cmd
+# View bot status
+pm2 status
+
+# View live logs
+pm2 logs discord-bot
+
+# Restart bot
+pm2 restart discord-bot
+
+# Stop bot
+pm2 stop discord-bot
+```
+
+## ⚡ Features Overview
+
+### Moderation
+- Kick, ban (temp/perm), mute, warn members
+- Bulk message deletion
+- Channel lock/unlock
+- Slowmode control
+- Complete mod logs
+
+### Auto-Moderation
+Automatically detects and handles:
+- Spam (5+ messages in 5 seconds)
+- Unauthorized links
+- Discord invites
+- Bad words
+- Excessive caps
+- Mass mentions
+
+### Blizzard Games
+- WoW: Character lookup, M+ scores, PvP ratings, token price
+- Overwatch: Player stats
+- Diablo 4: Character info
+- Hearthstone: Card search
+- StarCraft 2: Player profiles
+
+### AI Features (Gemini)
+- Natural conversations with context
+- Question answering
+- Text translation
+- Content summarization
+- Creative content generation
+
+### Leveling System
+- Earn XP from messages
+- Level up system
+- Server leaderboards
+- Rank cards
+
+## 🆘 Troubleshooting
+
+**Bot not starting?**
+- Check .env file has correct values
+- Verify MySQL is running
+- Look at logs/error.log
+
+**Commands not working?**
+- Run `/setup` first
+- Wait 1-2 minutes for Discord to sync commands
+- Check bot has proper permissions
+
+**Database errors?**
+- Verify MySQL is running
+- Check database exists: `SHOW DATABASES;`
+- Verify credentials in .env
+
+## 📞 File Structure
+
+```
+discord-bot/
+├── commands/          # All bot commands
+│   ├── admin/        # Setup & config commands
+│   ├── moderation/   # Moderation commands
+│   ├── blizzard/     # Game lookup commands
+│   ├── ai/           # AI-powered commands
+│   ├── utility/      # Utility commands
+│   └── fun/          # Fun commands
+├── database/         # Database handler
+├── events/           # Discord event handlers
+├── utils/            # Utility functions
+│   ├── autoMod.js   # Auto-moderation logic
+│   ├── blizzard.js  # Blizzard API wrapper
+│   ├── gemini.js    # Gemini AI wrapper
+│   └── logger.js    # Logging system
+├── logs/            # Log files (created on run)
+├── .env             # Your configuration (create this!)
+├── .env.example     # Template configuration
+├── index.js         # Main bot file
+├── package.json     # Dependencies
+├── README.md        # Full documentation
+└── DEPLOYMENT.md    # Detailed deployment guide
+
+```
+
+## 📖 Full Documentation
+
+- **README.md** - Complete feature list and documentation
+- **DEPLOYMENT.md** - Detailed Windows VPS deployment guide
+- **Code comments** - Every file is well-documented
+
+## 🎉 You're All Set!
+
+Once configured, your bot will:
+1. Auto-connect to Discord
+2. Register all slash commands
+3. Connect to your database
+4. Start monitoring all servers
+5. Be ready to moderate and entertain!
+
+Need help? Check the full README.md or DEPLOYMENT.md files!
+
+---
+
+Built with ❤️ using Discord.js v14

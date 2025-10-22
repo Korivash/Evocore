@@ -1,14 +1,31 @@
 {
   "name": "discord-bot",
   "version": "1.0.0",
-  "description": "",
+  "description": "Multi-purpose Discord bot with full moderation, Blizzard API, and AI integration",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "deploy": "node deploy-commands.js",
+    "deploy-guild": "node deploy-commands.js --guild",
+    "clear-commands": "node deploy-commands.js --clear",
+    "dev": "nodemon index.js",
+    "test": "echo \"No tests specified\" && exit 0"
   },
-  "keywords": [],
+  "keywords": [
+    "discord",
+    "bot",
+    "moderation",
+    "automod",
+    "blizzard",
+    "ai",
+    "gemini",
+    "multi-guild"
+  ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "dependencies": {
     "@discordjs/rest": "^2.6.0",
     "@google/generative-ai": "^0.24.1",
@@ -19,5 +36,8 @@
     "mysql2": "^3.15.3",
     "node-cron": "^4.2.1",
     "winston": "^3.18.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
   }
 }

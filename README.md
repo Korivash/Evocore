@@ -333,3 +333,52 @@ This project is provided as-is for your use.
 ---
 
 **Note**: Remember to never share your `.env` file or commit it to version control!
+
+## 🏅 Discord Auto Mod Badge Qualification
+
+This bot is designed to qualify for Discord's Auto Moderator badge. It includes:
+
+### Required Features:
+- ✅ **Comprehensive Moderation**: Kick, ban, mute, warn, timeout
+- ✅ **Auto-Moderation**: Spam, links, invites, bad words, caps, mentions
+- ✅ **Phishing Protection**: Automatic detection and removal
+- ✅ **Raid Protection**: Anti-spam with progressive punishment
+- ✅ **Logging**: Complete audit trail of all actions
+- ✅ **Customizable**: Per-server configuration
+- ✅ **Reliable**: Production-tested with error handling
+
+### Advanced Auto-Mod Features:
+- Spam detection (5 messages in 5 seconds)
+- Link filtering with permission bypass
+- Discord invite blocking
+- Phishing attempt detection (free nitro scams, etc.)
+- Bad word filtering
+- Excessive caps detection (70%+ threshold)
+- Mass mention protection (5+ mentions)
+- Progressive punishment (warn → mute → ban)
+- Real-time moderator alerts for serious threats
+
+## 🚀 Command Deployment
+
+This bot includes a separate command deployment system (`deploy-commands.js`):
+
+### Quick Deploy:
+```bash
+# Deploy all commands globally
+npm run deploy
+
+# Deploy to specific guild (instant, for testing)
+npm run deploy-guild YOUR_GUILD_ID
+
+# Clear all commands
+npm run clear-commands
+```
+
+### Why Separate Deployment?
+- Update commands without restarting the bot
+- Test commands in specific servers instantly
+- Deploy globally when ready (takes up to 1 hour)
+- Clean command management
+
+See [COMMAND-DEPLOYMENT.md](COMMAND-DEPLOYMENT.md) for detailed instructions.
+

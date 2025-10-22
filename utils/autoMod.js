@@ -1,10 +1,25 @@
 const db = require('../database/database');
 const logger = require('./logger');
 
-// Bad words list (you can expand this)
+// Bad words list (expand as needed - these are examples)
 const badWords = [
     'badword1', 'badword2', 'badword3'
-    // Add more as needed
+    // Add more as needed - this list should be comprehensive for production
+];
+
+// Suspicious patterns for Auto Mod badge
+const suspiciousPatterns = [
+    /discord\.gg\/[a-zA-Z0-9]+/gi,
+    /discordapp\.com\/invite\/[a-zA-Z0-9]+/gi,
+    /discord\.com\/invite\/[a-zA-Z0-9]+/gi,
+];
+
+// Phishing detection patterns
+const phishingPatterns = [
+    /free[\s-]?nitro/gi,
+    /steam[\s-]?community[\s-]?giveaway/gi,
+    /discord[\s-]?gift/gi,
+    /@everyone.*http/gi,
 ];
 
 // Spam detection cache
@@ -37,6 +52,33 @@ async function checkMessage(message, guildConfig) {
             const hasInvite = /(discord\.gg|discordapp\.com\/invite)\/[^\s]+/.test(message.content);
             if (hasInvite && !message.member.permissions.has('ManageGuild')) {
                 await handleViolation(message, 'INVITE', 'Posted Discord invite');
+                return;
+            }
+        }
+
+        // Phishing detection (always enabled for safety)
+        for (const pattern of phishingPatterns) {
+            if (pattern.test(message.content)) {
+                await handleViolation(message, 'PHISHING', 'Potential phishing attempt detected');
+                
+                // Also notify moderators
+                if (guildConfig.mod_log_channel_id) {
+                    const logChannel = message.guild.channels.cache.get(guildConfig.mod_log_channel_id);
+                    if (logChannel) {
+                        const { EmbedBuilder } = require('discord.js');
+                        const embed = new EmbedBuilder()
+                            .setColor('#ff0000')
+                            .setTitle('🚨 PHISHING ATTEMPT DETECTED')
+                            .setDescription('Immediate moderator attention required!')
+                            .addFields(
+                                { name: 'User', value: `${message.author.tag} (${message.author.id})`, inline: true },
+                                { name: 'Channel', value: `${message.channel}`, inline: true },
+                                { name: 'Content', value: message.content.substring(0, 1024), inline: false }
+                            )
+                            .setTimestamp();
+                        await logChannel.send({ embeds: [embed], content: '@here' });
+                    }
+                }
                 return;
             }
         }

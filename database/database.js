@@ -13,7 +13,28 @@ async function init() {
             database: process.env.DB_NAME,
             waitForConnections: true,
             connectionLimit: 10,
-            queueLimit: 0
+            queueLimit: 0,
+            // Fix for auth_gssapi_client and other plugin issues
+            authPlugins: {
+                mysql_native_password: () => () => {
+                    const crypto = require('crypto');
+                    return (pluginData) => {
+                        const password = Buffer.from(process.env.DB_PASSWORD);
+                        const token = Buffer.from(pluginData.slice(0, 20));
+                        
+                        const stage1 = crypto.createHash('sha1').update(password).digest();
+                        const stage2 = crypto.createHash('sha1').update(stage1).digest();
+                        const stage3 = crypto.createHash('sha1').update(token).update(stage2).digest();
+                        
+                        const result = Buffer.alloc(20);
+                        for (let i = 0; i < 20; i++) {
+                            result[i] = stage1[i] ^ stage3[i];
+                        }
+                        
+                        return result;
+                    };
+                }
+            }
         });
 
         // Test connection

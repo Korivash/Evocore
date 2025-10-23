@@ -1,5 +1,4 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const blizzard = require('../../utils/blizzard');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -27,90 +26,31 @@ module.exports = {
         const battleTag = interaction.options.getString('battletag');
         const platform = interaction.options.getString('platform') || 'pc';
 
-        try {
-            const profile = await blizzard.getOverwatchProfile(battleTag, platform);
-
-            const embed = new EmbedBuilder()
-                .setColor('#ff9c00')
-                .setTitle(`🎮 ${profile.username || battleTag} - Overwatch Profile`)
-                .setThumbnail(profile.avatar || 'https://blz-contentstack-images.akamaized.net/v3/assets/blt9c12f249ac15c7ec/bltfb9ffbf8c5d8d6be/62ea89040a70d35da68375e0/OW_CircleLogo.png')
-                .addFields(
-                    { 
-                        name: '🏆 Competitive Rank', 
-                        value: profile.competitive?.rank_name || profile.ratings?.[0]?.level || 'Unranked', 
-                        inline: true 
-                    },
-                    { 
-                        name: '⭐ Level', 
-                        value: profile.level?.toString() || profile.endorsement?.level?.toString() || 'N/A', 
-                        inline: true 
-                    },
-                    { 
-                        name: '🎯 Platform', 
-                        value: platform.toUpperCase(), 
-                        inline: true 
-                    }
-                );
-
-            // Add competitive stats if available
-            if (profile.competitive) {
-                const comp = profile.competitive;
-                if (comp.tank) {
-                    embed.addFields({
-                        name: '🛡️ Tank',
-                        value: `Rank: ${comp.tank.rank_name || 'N/A'}\nSR: ${comp.tank.sr || 'N/A'}`,
-                        inline: true
-                    });
-                }
-                if (comp.damage) {
-                    embed.addFields({
-                        name: '⚔️ Damage',
-                        value: `Rank: ${comp.damage.rank_name || 'N/A'}\nSR: ${comp.damage.sr || 'N/A'}`,
-                        inline: true
-                    });
-                }
-                if (comp.support) {
-                    embed.addFields({
-                        name: '💚 Support',
-                        value: `Rank: ${comp.support.rank_name || 'N/A'}\nSR: ${comp.support.sr || 'N/A'}`,
-                        inline: true
-                    });
-                }
-            }
-
-            // Add games played if available
-            if (profile.games) {
-                embed.addFields({
-                    name: '🎮 Games Played',
-                    value: `Quick Play: ${profile.games.quickplay || 'N/A'}\nCompetitive: ${profile.games.competitive || 'N/A'}`,
+        // Blizzard has deprecated public Overwatch profile API access
+        const embed = new EmbedBuilder()
+            .setColor('#ff9c00')
+            .setTitle('🎮 Overwatch Profile Lookup')
+            .setDescription('⚠️ **API Currently Unavailable**\n\nBlizzard has restricted public access to Overwatch player profile data through their API.')
+            .addFields(
+                { 
+                    name: '🔍 Alternative Methods', 
+                    value: '• Check in-game profile\n• Use official Overwatch website\n• Third-party trackers like OverwatchTracker.com', 
+                    inline: false 
+                },
+                {
+                    name: '📝 Searched Profile',
+                    value: `**BattleTag:** ${battleTag}\n**Platform:** ${platform.toUpperCase()}`,
                     inline: false
-                });
-            }
-
-            // Add playtime if available
-            if (profile.playtime) {
-                embed.addFields({
-                    name: '⏱️ Playtime',
-                    value: `${profile.playtime.quickplay || 'N/A'} hours`,
+                },
+                {
+                    name: '🔗 Resources',
+                    value: '[Official Overwatch Site](https://overwatch.blizzard.com)\n[OverwatchTracker](https://overwatchtracker.com)',
                     inline: false
-                });
-            }
+                }
+            )
+            .setFooter({ text: 'Blizzard API - Public access restricted' })
+            .setTimestamp();
 
-            embed.setFooter({ text: 'Data from Blizzard API' })
-                .setTimestamp();
-
-            await interaction.editReply({ embeds: [embed] });
-        } catch (error) {
-            console.error('Overwatch lookup error:', error);
-            
-            let errorMessage = '❌ Player not found or API error.';
-            if (error.response?.status === 404) {
-                errorMessage = '❌ Player not found. Make sure the BattleTag is correct (e.g., Player#1234).';
-            } else if (error.response?.status === 403) {
-                errorMessage = '❌ This profile is private or API access is restricted.';
-            }
-            
-            await interaction.editReply({ content: errorMessage });
-        }
+        await interaction.editReply({ embeds: [embed] });
     }
 };

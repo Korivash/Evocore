@@ -1,4 +1,4 @@
-# 🤖 EvoCore Discord Bot
+#  EvoCore Discord Bot (In Development, Updated Daily)
 
 <div align="center">
 

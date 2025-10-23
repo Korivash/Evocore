@@ -362,6 +362,35 @@ client.on(Events.GuildMemberAdd, async member => {
     }
 });
 
+// 🔵 Blizzard API Heartbeat - Check every 30 minutes
+  const checkBlizzardAPI = async () => {
+    try {
+      const fetch = require("node-fetch");
+      const res = await fetch("https://oauth.battle.net/token", {
+        method: "POST",
+        headers: {
+          Authorization:
+            "Basic " +
+            Buffer.from(
+              `${process.env.BLIZZARD_CLIENT_ID}:${process.env.BLIZZARD_CLIENT_SECRET}`
+            ).toString("base64"),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "grant_type=client_credentials",
+      });
+
+      if (res.ok) {
+        log.success("💙 Blizzard API: Healthy");
+      } else {
+        log.error(`❌ Blizzard API: Unhealthy (${res.status})`);
+        await sendErrorLog(client, new Error(`Blizzard API returned ${res.status}`), "Blizzard API Health Check");
+      }
+    } catch (err) {
+      log.error("❌ Blizzard API: Connection failed -", err.message);
+      await sendErrorLog(client, err, "Blizzard API Health Check");
+    }
+  };
+
 // Member leave event
 client.on(Events.GuildMemberRemove, async member => {
     try {

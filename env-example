@@ -1,6 +1,10 @@
 # Discord Bot Configuration
 DISCORD_TOKEN=your_discord_bot_token_here
 
+# Error & Monitoring Channels (Optional - Discord channel IDs)
+ERROR_LOG_CHANNEL_ID=your_error_log_channel_id
+HEARTBEAT_CHANNEL_ID=your_heartbeat_channel_id
+
 # Database Configuration
 DB_HOST=localhost
 DB_USER=your_database_user
@@ -12,6 +16,7 @@ BLIZZARD_CLIENT_ID=your_blizzard_client_id
 BLIZZARD_CLIENT_SECRET=your_blizzard_client_secret
 BLIZZARD_REGION=us
 BLIZZARD_LOCALE=en_US
+BLIZZARD_OAUTH_URL=https://us.battle.net/oauth/token
 
 # Gemini AI Configuration
 GEMINI_API_KEY=your_gemini_api_key_here

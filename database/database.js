@@ -3,7 +3,6 @@ const logger = require('../utils/logger');
 
 let pool;
 
-// Initialize database connection pool
 async function init() {
     try {
         pool = mysql.createPool({
@@ -14,7 +13,6 @@ async function init() {
             waitForConnections: true,
             connectionLimit: 10,
             queueLimit: 0,
-            // Fix for auth_gssapi_client and other plugin issues
             authPlugins: {
                 mysql_native_password: () => () => {
                     const crypto = require('crypto');
@@ -37,12 +35,10 @@ async function init() {
             }
         });
 
-        // Test connection
         const connection = await pool.getConnection();
         logger.info('Database connected successfully');
         connection.release();
 
-        // Create tables
         await createTables();
     } catch (error) {
         logger.error('Database connection error:', error);
@@ -50,12 +46,10 @@ async function init() {
     }
 }
 
-// Create all necessary tables
 async function createTables() {
     const connection = await pool.getConnection();
     
     try {
-        // Guild configuration table
         await connection.query(`
             CREATE TABLE IF NOT EXISTS guild_config (
                 guild_id VARCHAR(20) PRIMARY KEY,
@@ -78,7 +72,6 @@ async function createTables() {
             )
         `);
 
-        // Moderation logs table
         await connection.query(`
             CREATE TABLE IF NOT EXISTS mod_logs (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -94,7 +87,6 @@ async function createTables() {
             )
         `);
 
-        // Warnings table
         await connection.query(`
             CREATE TABLE IF NOT EXISTS warnings (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -107,7 +99,6 @@ async function createTables() {
             )
         `);
 
-        // Temporary bans table
         await connection.query(`
             CREATE TABLE IF NOT EXISTS temp_bans (
                 guild_id VARCHAR(20) NOT NULL,
@@ -119,7 +110,6 @@ async function createTables() {
             )
         `);
 
-        // Command usage statistics
         await connection.query(`
             CREATE TABLE IF NOT EXISTS command_stats (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -131,7 +121,6 @@ async function createTables() {
             )
         `);
 
-        // Auto-mod violations
         await connection.query(`
             CREATE TABLE IF NOT EXISTS automod_violations (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -144,7 +133,6 @@ async function createTables() {
             )
         `);
 
-        // Blizzard API cache
         await connection.query(`
             CREATE TABLE IF NOT EXISTS blizzard_cache (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -156,7 +144,6 @@ async function createTables() {
             )
         `);
 
-        // User levels and XP
         await connection.query(`
             CREATE TABLE IF NOT EXISTS user_levels (
                 guild_id VARCHAR(20) NOT NULL,
@@ -170,7 +157,6 @@ async function createTables() {
             )
         `);
 
-        // Custom commands
         await connection.query(`
             CREATE TABLE IF NOT EXISTS custom_commands (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -183,7 +169,6 @@ async function createTables() {
             )
         `);
 
-        // Scheduled messages
         await connection.query(`
             CREATE TABLE IF NOT EXISTS scheduled_messages (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -196,6 +181,43 @@ async function createTables() {
             )
         `);
 
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS guild_events (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                guild_id VARCHAR(20) NOT NULL,
+                organizer_id VARCHAR(20) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                event_date TIMESTAMP NOT NULL,
+                event_type VARCHAR(50) NOT NULL,
+                max_participants INT DEFAULT 0,
+                channel_id VARCHAR(20),
+                message_id VARCHAR(20),
+                is_cancelled BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_guild_date (guild_id, event_date),
+                INDEX idx_organizer (organizer_id)
+            )
+        `);
+
+        await connection.query(`
+            CREATE TABLE IF NOT EXISTS event_participants (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                event_id INT NOT NULL,
+                user_id VARCHAR(20) NOT NULL,
+                status ENUM('accepted', 'declined', 'tentative', 'late') DEFAULT 'tentative',
+                wow_class VARCHAR(50),
+                wow_role VARCHAR(50),
+                notes TEXT,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_participation (event_id, user_id),
+                FOREIGN KEY (event_id) REFERENCES guild_events(id) ON DELETE CASCADE,
+                INDEX idx_event_status (event_id, status)
+            )
+        `);
+
         logger.info('All database tables created/verified');
     } catch (error) {
         logger.error('Error creating tables:', error);
@@ -205,7 +227,6 @@ async function createTables() {
     }
 }
 
-// Guild configuration functions
 async function getGuildConfig(guildId) {
     const [rows] = await pool.query(
         'SELECT * FROM guild_config WHERE guild_id = ?',
@@ -219,21 +240,36 @@ async function createGuildConfig(guildId) {
         'INSERT INTO guild_config (guild_id) VALUES (?) ON DUPLICATE KEY UPDATE guild_id = guild_id',
         [guildId]
     );
-    return getGuildConfig(guildId);
+    return await getGuildConfig(guildId);
 }
 
 async function updateGuildConfig(guildId, updates) {
-    const keys = Object.keys(updates);
-    const values = Object.values(updates);
-    const setClause = keys.map(key => `${key} = ?`).join(', ');
+    const allowedFields = [
+        'prefix', 'mod_log_channel_id', 'welcome_channel_id', 'goodbye_channel_id',
+        'welcome_message', 'goodbye_message', 'auto_role_id', 'auto_mod_enabled',
+        'anti_spam_enabled', 'anti_link_enabled', 'anti_invite_enabled',
+        'max_warnings', 'mute_role_id', 'blizzard_api_enabled'
+    ];
+    
+    const updateFields = Object.keys(updates)
+        .filter(key => allowedFields.includes(key))
+        .map(key => `${key} = ?`)
+        .join(', ');
+    
+    if (updateFields.length === 0) return;
+    
+    const values = Object.keys(updates)
+        .filter(key => allowedFields.includes(key))
+        .map(key => updates[key]);
+    
+    values.push(guildId);
     
     await pool.query(
-        `UPDATE guild_config SET ${setClause} WHERE guild_id = ?`,
-        [...values, guildId]
+        `UPDATE guild_config SET ${updateFields} WHERE guild_id = ?`,
+        values
     );
 }
 
-// Moderation functions
 async function addModLog(guildId, userId, moderatorId, action, reason, duration = null) {
     await pool.query(
         'INSERT INTO mod_logs (guild_id, user_id, moderator_id, action, reason, duration) VALUES (?, ?, ?, ?, ?, ?)',
@@ -241,10 +277,10 @@ async function addModLog(guildId, userId, moderatorId, action, reason, duration 
     );
 }
 
-async function getModLogs(guildId, userId, limit = 10) {
+async function getModLogs(guildId, userId) {
     const [rows] = await pool.query(
-        'SELECT * FROM mod_logs WHERE guild_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT ?',
-        [guildId, userId, limit]
+        'SELECT * FROM mod_logs WHERE guild_id = ? AND user_id = ? ORDER BY created_at DESC',
+        [guildId, userId]
     );
     return rows;
 }
@@ -257,7 +293,6 @@ async function getAllModLogs(guildId, limit = 50) {
     return rows;
 }
 
-// Warning functions
 async function addWarning(guildId, userId, moderatorId, reason) {
     await pool.query(
         'INSERT INTO warnings (guild_id, user_id, moderator_id, reason) VALUES (?, ?, ?, ?)',
@@ -288,7 +323,6 @@ async function clearWarnings(guildId, userId) {
     );
 }
 
-// Temporary ban functions
 async function addTempBan(guildId, userId, expiresAt, reason) {
     await pool.query(
         'INSERT INTO temp_bans (guild_id, user_id, expires_at, reason) VALUES (?, ?, ?, ?)',
@@ -310,7 +344,6 @@ async function getExpiredTempBans() {
     return rows;
 }
 
-// Command statistics
 async function logCommand(guildId, userId, commandName) {
     await pool.query(
         'INSERT INTO command_stats (guild_id, user_id, command_name) VALUES (?, ?, ?)',
@@ -330,7 +363,6 @@ async function getCommandStats(guildId) {
     return rows;
 }
 
-// Auto-mod violations
 async function addAutoModViolation(guildId, userId, violationType, content) {
     await pool.query(
         'INSERT INTO automod_violations (guild_id, user_id, violation_type, content) VALUES (?, ?, ?, ?)',
@@ -346,7 +378,6 @@ async function getAutoModViolations(guildId, userId) {
     return rows;
 }
 
-// Blizzard cache functions
 async function getCachedBlizzardData(key) {
     const [rows] = await pool.query(
         'SELECT cache_data FROM blizzard_cache WHERE cache_key = ? AND expires_at > NOW()',
@@ -363,7 +394,6 @@ async function setCachedBlizzardData(key, data, ttlMinutes = 60) {
     );
 }
 
-// User levels and XP
 async function addXP(guildId, userId, amount) {
     await pool.query(
         `INSERT INTO user_levels (guild_id, user_id, xp, messages_sent, last_xp_at) 
@@ -375,7 +405,6 @@ async function addXP(guildId, userId, amount) {
         [guildId, userId, amount, amount]
     );
     
-    // Check if level up
     const [rows] = await pool.query(
         'SELECT xp, level FROM user_levels WHERE guild_id = ? AND user_id = ?',
         [guildId, userId]
@@ -411,7 +440,6 @@ async function getLeaderboard(guildId, limit = 10) {
     return rows;
 }
 
-// Custom commands
 async function addCustomCommand(guildId, trigger, response, createdBy) {
     await pool.query(
         'INSERT INTO custom_commands (guild_id, trigger_word, response, created_by) VALUES (?, ?, ?, ?)',
@@ -442,25 +470,126 @@ async function getAllCustomCommands(guildId) {
     return rows;
 }
 
-// Cleanup functions
+async function createEvent(guildId, organizerId, title, description, eventDate, eventType, maxParticipants) {
+    const [result] = await pool.query(
+        `INSERT INTO guild_events (guild_id, organizer_id, title, description, event_date, event_type, max_participants)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [guildId, organizerId, title, description, eventDate, eventType, maxParticipants]
+    );
+    return result.insertId;
+}
+
+async function getEvent(eventId) {
+    const [rows] = await pool.query(
+        'SELECT * FROM guild_events WHERE id = ? AND is_cancelled = FALSE',
+        [eventId]
+    );
+    return rows[0] || null;
+}
+
+async function getGuildEvents(guildId, includeOld = false) {
+    let query = 'SELECT * FROM guild_events WHERE guild_id = ? AND is_cancelled = FALSE';
+    
+    if (!includeOld) {
+        query += ' AND event_date >= NOW()';
+    }
+    
+    query += ' ORDER BY event_date ASC';
+    
+    const [rows] = await pool.query(query, [guildId]);
+    return rows;
+}
+
+async function updateEventMessage(eventId, channelId, messageId) {
+    await pool.query(
+        'UPDATE guild_events SET channel_id = ?, message_id = ? WHERE id = ?',
+        [channelId, messageId, eventId]
+    );
+}
+
+async function cancelEvent(eventId) {
+    await pool.query(
+        'UPDATE guild_events SET is_cancelled = TRUE WHERE id = ?',
+        [eventId]
+    );
+}
+
+async function deleteEvent(eventId) {
+    await pool.query(
+        'DELETE FROM guild_events WHERE id = ?',
+        [eventId]
+    );
+}
+
+async function addEventParticipant(eventId, userId, status = 'tentative') {
+    await pool.query(
+        `INSERT INTO event_participants (event_id, user_id, status)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE status = ?, updated_at = CURRENT_TIMESTAMP`,
+        [eventId, userId, status, status]
+    );
+}
+
+async function removeEventParticipant(eventId, userId) {
+    await pool.query(
+        'DELETE FROM event_participants WHERE event_id = ? AND user_id = ?',
+        [eventId, userId]
+    );
+}
+
+async function getEventParticipants(eventId) {
+    const [rows] = await pool.query(
+        'SELECT * FROM event_participants WHERE event_id = ? ORDER BY joined_at ASC',
+        [eventId]
+    );
+    return rows;
+}
+
+async function getParticipantCount(eventId, status = null) {
+    let query = 'SELECT COUNT(*) as count FROM event_participants WHERE event_id = ?';
+    const params = [eventId];
+    
+    if (status) {
+        query += ' AND status = ?';
+        params.push(status);
+    }
+    
+    const [rows] = await pool.query(query, params);
+    return rows[0].count;
+}
+
+async function updateParticipantClass(eventId, userId, wowClass, wowRole) {
+    await pool.query(
+        'UPDATE event_participants SET wow_class = ?, wow_role = ?, updated_at = CURRENT_TIMESTAMP WHERE event_id = ? AND user_id = ?',
+        [wowClass, wowRole, eventId, userId]
+    );
+}
+
+async function updateParticipantNotes(eventId, userId, notes) {
+    await pool.query(
+        'UPDATE event_participants SET notes = ?, updated_at = CURRENT_TIMESTAMP WHERE event_id = ? AND user_id = ?',
+        [notes, eventId, userId]
+    );
+}
+
 async function cleanupOldData() {
-    // Delete command stats older than 90 days
     await pool.query(
         'DELETE FROM command_stats WHERE used_at < DATE_SUB(NOW(), INTERVAL 90 DAY)'
     );
     
-    // Delete automod violations older than 30 days
     await pool.query(
         'DELETE FROM automod_violations WHERE created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)'
     );
     
-    // Delete expired cache entries
     await pool.query(
         'DELETE FROM blizzard_cache WHERE expires_at < NOW()'
     );
+    
+    await pool.query(
+        'DELETE FROM guild_events WHERE event_date < DATE_SUB(NOW(), INTERVAL 90 DAY) AND is_cancelled = TRUE'
+    );
 }
 
-// Close database connection
 async function close() {
     if (pool) {
         await pool.end();
@@ -468,7 +597,6 @@ async function close() {
     }
 }
 
-// Initialize database on module load
 init();
 
 module.exports = {
@@ -498,6 +626,18 @@ module.exports = {
     getCustomCommand,
     deleteCustomCommand,
     getAllCustomCommands,
+    createEvent,
+    getEvent,
+    getGuildEvents,
+    updateEventMessage,
+    cancelEvent,
+    deleteEvent,
+    addEventParticipant,
+    removeEventParticipant,
+    getEventParticipants,
+    getParticipantCount,
+    updateParticipantClass,
+    updateParticipantNotes,
     cleanupOldData,
     close
 };

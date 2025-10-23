@@ -572,6 +572,21 @@ async function updateParticipantNotes(eventId, userId, notes) {
     );
 }
 
+async function getUpcomingEvents(guildId, limit = 25) {
+    const [rows] = await pool.query(
+        'SELECT * FROM guild_events WHERE guild_id = ? AND is_cancelled = FALSE AND event_date >= NOW() ORDER BY event_date ASC LIMIT ?',
+        [guildId, limit]
+    );
+    return rows;
+}
+
+async function updateEventMessageId(eventId, messageId) {
+    await pool.query(
+        'UPDATE guild_events SET message_id = ? WHERE id = ?',
+        [messageId, eventId]
+    );
+}
+
 async function cleanupOldData() {
     await pool.query(
         'DELETE FROM command_stats WHERE used_at < DATE_SUB(NOW(), INTERVAL 90 DAY)'

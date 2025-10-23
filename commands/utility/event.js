@@ -170,7 +170,7 @@ async function handleCreate(interaction) {
         title,
         description,
         date: eventDate,
-        type,
+        event_type: type,
         max_participants: maxParticipants,
         organizer_id: interaction.user.id
     }, []);
@@ -233,7 +233,7 @@ async function handleCancel(interaction) {
             await message.edit({ embeds: [embed], components: [] });
         }
     } catch (error) {
-        logger.error('Error updating cancelled event message:', error);
+        console.error('Error updating cancelled event message:', error);
     }
 
     // Notify participants
@@ -324,7 +324,9 @@ async function handleRoster(interaction) {
         if (participant.wow_class && participant.wow_role) {
             const classData = WOW_CLASSES[participant.wow_class];
             const roleData = WOW_ROLES[participant.wow_role];
-            line += ` - ${classData.emoji} ${classData.name} (${roleData.emoji} ${roleData.name})`;
+            if (classData && roleData) {
+                line += ` - ${classData.emoji} ${classData.name} (${roleData.emoji} ${roleData.name})`;
+            }
         }
 
         if (participant.notes) {
@@ -380,8 +382,8 @@ function createEventEmbed(event, participants) {
         .setDescription(event.description)
         .setColor('#0099ff')
         .addFields(
-            { name: '📅 Date', value: `<t:${Math.floor(new Date(event.date).getTime() / 1000)}:F>`, inline: true },
-            { name: '⏰ Starts In', value: `<t:${Math.floor(new Date(event.date).getTime() / 1000)}:R>`, inline: true },
+            { name: '📅 Date', value: `<t:${Math.floor(new Date(event.date || event.event_date).getTime() / 1000)}:F>`, inline: true },
+            { name: '⏰ Starts In', value: `<t:${Math.floor(new Date(event.date || event.event_date).getTime() / 1000)}:R>`, inline: true },
             { name: '👤 Organizer', value: `<@${event.organizer_id}>`, inline: true }
         )
         .setFooter({ text: `Event ID: ${event.id} | Use /event roster ${event.id} to see full roster` })
@@ -398,7 +400,8 @@ function createEventEmbed(event, participants) {
     }
 
     // Add role breakdown for WoW events
-    if (event.type.startsWith('wow-')) {
+    const eventType = event.event_type || event.type || '';
+    if (eventType.startsWith('wow-')) {
         const tanks = participants.filter(p => p.wow_role === 'tank' && p.status === 'accepted').length;
         const healers = participants.filter(p => p.wow_role === 'healer' && p.status === 'accepted').length;
         const dps = participants.filter(p => p.wow_role === 'dps' && p.status === 'accepted').length;

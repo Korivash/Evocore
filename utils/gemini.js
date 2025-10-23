@@ -12,8 +12,9 @@ function initialize() {
 
     try {
         genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-        logger.info('Gemini AI initialized successfully');
+        // Use Gemini 2.0 Flash - the newest model
+        model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+        logger.info('Gemini AI initialized successfully with Gemini 2.0 Flash');
     } catch (error) {
         logger.error('Error initializing Gemini AI:', error);
     }
@@ -41,7 +42,8 @@ async function analyzeImage(imageData, prompt) {
     }
 
     try {
-        const visionModel = genAI.getGenerativeModel({ model: 'gemini-pro-vision' });
+        // Gemini 2.0 Flash supports vision natively
+        const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
         const result = await visionModel.generateContent([prompt, imageData]);
         const response = await result.response;
         return response.text();
@@ -115,7 +117,7 @@ async function translateText(text, targetLanguage) {
     }
 
     try {
-        const prompt = `Translate the following text to ${targetLanguage}:\n\n${text}`;
+        const prompt = `Translate the following text to ${targetLanguage}. Only provide the translation, no explanations:\n\n${text}`;
         const result = await model.generateContent(prompt);
         const response = await result.response;
         return response.text();
@@ -134,16 +136,16 @@ async function generateCreativeContent(type, topic, style = '') {
         let prompt = '';
         switch (type) {
             case 'story':
-                prompt = `Write a short story about ${topic}${style ? ` in a ${style} style` : ''}.`;
+                prompt = `Write a short story about ${topic}${style ? ` in a ${style} style` : ''}. Keep it under 500 words.`;
                 break;
             case 'poem':
-                prompt = `Write a poem about ${topic}${style ? ` in ${style} format` : ''}.`;
+                prompt = `Write a poem about ${topic}${style ? ` in ${style} format` : ''}. Make it creative and engaging.`;
                 break;
             case 'joke':
-                prompt = `Tell a funny joke about ${topic}.`;
+                prompt = `Tell a funny, family-friendly joke about ${topic}.`;
                 break;
             case 'fact':
-                prompt = `Share an interesting fact about ${topic}.`;
+                prompt = `Share an interesting and verified fact about ${topic}. Keep it concise.`;
                 break;
             default:
                 prompt = `Generate creative content about ${topic}.`;
@@ -164,13 +166,15 @@ async function chatWithContext(messages) {
     }
 
     try {
+        // Use Gemini 2.0's improved chat capabilities
         const chat = model.startChat({
             history: messages.slice(0, -1).map(msg => ({
                 role: msg.role === 'user' ? 'user' : 'model',
-                parts: msg.content
+                parts: [{ text: msg.content }]
             })),
             generationConfig: {
-                maxOutputTokens: 1000,
+                maxOutputTokens: 2048,
+                temperature: 0.9,
             },
         });
 

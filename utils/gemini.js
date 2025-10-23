@@ -1,25 +1,37 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Replicate = require('replicate');
 const logger = require('./logger');
+const axios = require('axios');
 
 let genAI;
 let model;
-let imageModel;
+let replicate;
 
 function initialize() {
     if (!process.env.GEMINI_API_KEY) {
         logger.warn('Gemini API key not found, AI features will be disabled');
-        return;
+    } else {
+        try {
+            genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+            // Use Gemini 2.0 Flash - the newest text model
+            model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+            logger.info('Gemini AI initialized successfully with Gemini 2.0 Flash');
+        } catch (error) {
+            logger.error('Error initializing Gemini AI:', error);
+        }
     }
 
-    try {
-        genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        // Use Gemini 2.0 Flash - the newest text model
-        model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-        // Initialize Imagen 3 for image generation
-        imageModel = genAI.getGenerativeModel({ model: 'imagen-3.0-generate-001' });
-        logger.info('Gemini AI initialized successfully with Gemini 2.0 Flash and Imagen 3');
-    } catch (error) {
-        logger.error('Error initializing Gemini AI:', error);
+    if (process.env.REPLICATE_API_TOKEN) {
+        try {
+            replicate = new Replicate({
+                auth: process.env.REPLICATE_API_TOKEN,
+            });
+            logger.info('Replicate initialized successfully for image generation');
+        } catch (error) {
+            logger.error('Error initializing Replicate:', error);
+        }
+    } else {
+        logger.warn('Replicate API token not found, image generation will be disabled');
     }
 }
 
@@ -40,104 +52,77 @@ async function generateResponse(prompt, context = '') {
 }
 
 async function generateImage(prompt, aspectRatio = '1:1') {
-    if (!imageModel) {
-        throw new Error('Imagen 3 is not initialized');
+    if (!replicate) {
+        throw new Error('Image generation is not available. Please configure REPLICATE_API_TOKEN in your .env file.');
     }
 
     try {
-        // Map aspect ratios to Imagen 3 format
-        const ratioMap = {
-            '1:1': '1:1',
-            '16:9': '16:9',
-            '9:16': '9:16',
-            '21:9': '16:9' // Fallback to 16:9 for 21:9
+        logger.info(`Generating image with Stable Diffusion SDXL: "${prompt}" (${aspectRatio})`);
+
+        // Map aspect ratios to width/height for SDXL
+        const dimensions = {
+            '1:1': { width: 1024, height: 1024 },
+            '16:9': { width: 1344, height: 768 },
+            '9:16': { width: 768, height: 1344 },
+            '21:9': { width: 1536, height: 640 }
         };
 
-        const mappedRatio = ratioMap[aspectRatio] || '1:1';
+        const { width, height } = dimensions[aspectRatio] || dimensions['1:1'];
 
-        logger.info(`Generating image with prompt: "${prompt}" (${mappedRatio})`);
-
-        // Generate image using Imagen 3
-        const result = await imageModel.generateContent({
-            contents: [{
-                role: 'user',
-                parts: [{
-                    text: prompt
-                }]
-            }],
-            generationConfig: {
-                temperature: 1.0,
-                topP: 0.95,
-                topK: 40,
-                maxOutputTokens: 8192,
-                responseMimeType: 'image/png',
-            },
-            safetySettings: [
-                {
-                    category: 'HARM_CATEGORY_HATE_SPEECH',
-                    threshold: 'BLOCK_MEDIUM_AND_ABOVE'
-                },
-                {
-                    category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-                    threshold: 'BLOCK_MEDIUM_AND_ABOVE'
-                },
-                {
-                    category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-                    threshold: 'BLOCK_MEDIUM_AND_ABOVE'
-                },
-                {
-                    category: 'HARM_CATEGORY_HARASSMENT',
-                    threshold: 'BLOCK_MEDIUM_AND_ABOVE'
+        // Use Stable Diffusion XL for high quality image generation
+        const output = await replicate.run(
+            "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
+            {
+                input: {
+                    prompt: prompt,
+                    width: width,
+                    height: height,
+                    num_outputs: 1,
+                    scheduler: "K_EULER",
+                    num_inference_steps: 30,
+                    guidance_scale: 7.5,
+                    negative_prompt: "ugly, blurry, poor quality, distorted, deformed",
+                    refine: "expert_ensemble_refiner",
+                    high_noise_frac: 0.8
                 }
-            ]
-        });
+            }
+        );
 
-        const response = await result.response;
-        
-        // Get the image data
-        if (response.candidates && response.candidates[0]) {
-            const candidate = response.candidates[0];
+        // Output is an array of URLs
+        if (output && output[0]) {
+            const imageUrl = output[0];
+            logger.info(`Image generated successfully: ${imageUrl}`);
             
-            // Check if blocked by safety filters
-            if (candidate.finishReason === 'SAFETY') {
-                throw new Error('Image generation blocked by safety filters');
-            }
+            // Download the image and return as buffer
+            const response = await axios.get(imageUrl, {
+                responseType: 'arraybuffer',
+                timeout: 30000
+            });
 
-            // Extract image data from the response
-            if (candidate.content && candidate.content.parts && candidate.content.parts[0]) {
-                const part = candidate.content.parts[0];
-                
-                // If inline data is present
-                if (part.inlineData) {
-                    const base64Data = part.inlineData.data;
-                    return Buffer.from(base64Data, 'base64');
-                }
-                
-                // If file data is present
-                if (part.fileData) {
-                    // Handle file data (would need to fetch from URI)
-                    throw new Error('File data format not yet supported');
-                }
-            }
+            return Buffer.from(response.data);
         }
 
-        throw new Error('No image data in response');
+        throw new Error('No image generated');
 
     } catch (error) {
         logger.error('Error generating image:', error);
         
-        // Provide more specific error messages
-        if (error.message.includes('safety')) {
+        // Provide specific error messages
+        if (error.message.includes('not available')) {
+            throw error;
+        } else if (error.message.includes('Prediction failed')) {
+            throw new Error('Image generation failed. Please try a different prompt.');
+        } else if (error.message.includes('safety')) {
             throw new Error('Image generation blocked by safety filters. Please try a different prompt.');
-        } else if (error.message.includes('quota') || error.message.includes('429')) {
+        } else if (error.message.includes('timeout')) {
+            throw new Error('Image generation timed out. Please try again.');
+        } else if (error.response?.status === 401) {
+            throw new Error('Invalid Replicate API token. Please check your configuration.');
+        } else if (error.response?.status === 429) {
             throw new Error('API quota exceeded. Please try again later.');
-        } else if (error.message.includes('API key')) {
-            throw new Error('Invalid API key configuration.');
-        } else if (error.response?.status === 400) {
-            throw new Error('Invalid prompt or parameters. Please try rephrasing your request.');
         }
         
-        throw error;
+        throw new Error(`Image generation error: ${error.message}`);
     }
 }
 
@@ -306,5 +291,5 @@ module.exports = {
     generateCreativeContent,
     chatWithContext,
     isInitialized: () => model !== null,
-    isImageGenerationAvailable: () => imageModel !== null
+    isImageGenerationAvailable: () => replicate !== null
 };

@@ -57,9 +57,10 @@ const client = new Client({
 client.commands = new Collection();
 client.cooldowns = new Collection();
 
-// Error logging channel ID (set this in your .env or config)
+// Logging channel IDs from .env
 const ERROR_LOG_CHANNEL_ID = process.env.ERROR_LOG_CHANNEL_ID;
 const HEARTBEAT_CHANNEL_ID = process.env.HEARTBEAT_CHANNEL_ID;
+const SERVER_LOG_CHANNEL_ID = process.env.SERVER_LOG_CHANNEL_ID;
 
 // Heartbeat tracking
 let lastHeartbeat = Date.now();
@@ -68,7 +69,15 @@ let heartbeatFailures = 0;
 let heartbeatMessageId = null; // Track the heartbeat message for editing
 const MAX_HEARTBEAT_FAILURES = 3;
 
-// Helper function to log errors to Discord
+// ============================================================================
+// DISCORD LOGGING FUNCTIONS
+// ============================================================================
+
+/**
+ * Log errors to Discord error channel
+ * @param {Error} error - The error object
+ * @param {string} context - Additional context about where/when the error occurred
+ */
 async function logErrorToDiscord(error, context = '') {
     if (!ERROR_LOG_CHANNEL_ID) {
         logger.warn('ERROR_LOG_CHANNEL_ID not configured - skipping Discord error log');
@@ -91,9 +100,12 @@ async function logErrorToDiscord(error, context = '') {
             .setDescription(`\`\`\`js\n${truncatedStack}\`\`\``)
             .addFields(
                 { name: 'Context', value: context.substring(0, 1024) || 'No context provided', inline: false },
-                { name: 'Timestamp', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false }
+                { name: 'Timestamp', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false },
+                { name: 'Error Type', value: error.name || 'Unknown', inline: true },
+                { name: 'Guilds Active', value: client.guilds.cache.size.toString(), inline: true }
             )
-            .setTimestamp();
+            .setTimestamp()
+            .setFooter({ text: `Bot: ${client.user?.tag || 'Unknown'}` });
 
         await channel.send({ embeds: [embed] });
         logger.info('✅ Error logged to Discord channel');
@@ -102,27 +114,45 @@ async function logErrorToDiscord(error, context = '') {
     }
 }
 
-// Helper function to send server join/leave notifications
+/**
+ * Log server join/leave events to Discord
+ * @param {Guild} guild - The Discord guild object
+ * @param {string} type - 'join' or 'leave'
+ */
 async function logServerEvent(guild, type) {
-    if (!ERROR_LOG_CHANNEL_ID) return;
+    const channelId = SERVER_LOG_CHANNEL_ID || ERROR_LOG_CHANNEL_ID;
+    if (!channelId) {
+        logger.warn('Neither SERVER_LOG_CHANNEL_ID nor ERROR_LOG_CHANNEL_ID configured - skipping server event log');
+        return;
+    }
     
     try {
-        const channel = await client.channels.fetch(ERROR_LOG_CHANNEL_ID).catch(() => null);
-        if (!channel) return;
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        if (!channel) {
+            logger.warn(`Server log channel ${channelId} not found or bot lacks access`);
+            return;
+        }
 
+        const isJoin = type === 'join';
         const embed = new EmbedBuilder()
-            .setColor(type === 'join' ? '#00ff00' : '#ff0000')
-            .setTitle(type === 'join' ? '🎉 Bot Joined Server' : '👋 Bot Left Server')
+            .setColor(isJoin ? '#00ff00' : '#ff0000')
+            .setTitle(isJoin ? '🎉 Bot Joined Server' : '👋 Bot Left Server')
             .setThumbnail(guild.iconURL({ dynamic: true, size: 256 }) || null)
             .addFields(
-                { name: 'Server Name', value: guild.name, inline: true },
-                { name: 'Server ID', value: guild.id, inline: true },
-                { name: 'Member Count', value: guild.memberCount.toString(), inline: true },
-                { name: 'Owner', value: `<@${guild.ownerId}>`, inline: true },
-                { name: 'Created', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true },
-                { name: 'Total Servers', value: client.guilds.cache.size.toString(), inline: true }
+                { name: '📋 Server Name', value: guild.name, inline: true },
+                { name: '🆔 Server ID', value: guild.id, inline: true },
+                { name: '👥 Members', value: guild.memberCount.toString(), inline: true },
+                { name: '👑 Owner', value: `<@${guild.ownerId}>`, inline: true },
+                { name: '📅 Created', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true },
+                { name: '🌐 Total Servers', value: client.guilds.cache.size.toString(), inline: true }
             )
-            .setTimestamp();
+            .setTimestamp()
+            .setFooter({ text: `Bot: ${client.user?.tag || 'Unknown'}` });
+
+        // Add server description if available
+        if (guild.description) {
+            embed.addFields({ name: '📝 Description', value: guild.description.substring(0, 1024), inline: false });
+        }
 
         await channel.send({ embeds: [embed] });
         logger.info(`✅ Server ${type} event logged to Discord`);
@@ -131,11 +161,87 @@ async function logServerEvent(guild, type) {
     }
 }
 
-// Heartbeat system - monitors bot health
+/**
+ * Send heartbeat status to Discord
+ */
+async function sendDiscordHeartbeat() {
+    if (!HEARTBEAT_CHANNEL_ID) {
+        logger.debug('HEARTBEAT_CHANNEL_ID not configured - skipping Discord heartbeat');
+        return;
+    }
+    
+    try {
+        const channel = await client.channels.fetch(HEARTBEAT_CHANNEL_ID).catch(() => null);
+        if (!channel) {
+            logger.warn(`Heartbeat channel ${HEARTBEAT_CHANNEL_ID} not found or bot lacks access`);
+            return;
+        }
+        
+        const uptime = process.uptime();
+        const days = Math.floor(uptime / 86400);
+        const hours = Math.floor((uptime % 86400) / 3600);
+        const minutes = Math.floor((uptime % 3600) / 60);
+        const memUsage = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+        const memTotal = Math.round(process.memoryUsage().heapTotal / 1024 / 1024);
+        const totalMembers = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
+        
+        // Determine status color based on metrics
+        let statusColor = '#00ff00'; // Green by default
+        if (client.ws.ping > 300 || memUsage > 500) {
+            statusColor = '#ffaa00'; // Orange for warning
+        }
+        if (client.ws.ping > 1000 || memUsage > 1000) {
+            statusColor = '#ff0000'; // Red for critical
+        }
+        
+        let uptimeString = '';
+        if (days > 0) uptimeString += `${days}d `;
+        uptimeString += `${hours}h ${minutes}m`;
+        
+        const embed = new EmbedBuilder()
+            .setColor(statusColor)
+            .setTitle('💓 Bot Heartbeat')
+            .setDescription('**Status:** 🟢 Online and operational')
+            .addFields(
+                { name: '⏱️ Uptime', value: uptimeString, inline: true },
+                { name: '🏓 Ping', value: `${client.ws.ping}ms`, inline: true },
+                { name: '💾 Memory', value: `${memUsage}/${memTotal} MB`, inline: true },
+                { name: '🌐 Servers', value: client.guilds.cache.size.toString(), inline: true },
+                { name: '👥 Total Users', value: totalMembers.toLocaleString(), inline: true },
+                { name: '📊 Commands', value: client.commands.size.toString(), inline: true }
+            )
+            .setTimestamp()
+            .setFooter({ text: `Next heartbeat in 5 minutes` });
+
+        // Try to edit existing heartbeat message, or send a new one
+        if (heartbeatMessageId) {
+            try {
+                const existingMessage = await channel.messages.fetch(heartbeatMessageId);
+                await existingMessage.edit({ embeds: [embed] });
+                logger.debug('Updated existing heartbeat message');
+            } catch (err) {
+                // Message not found or can't edit, send new one
+                const message = await channel.send({ embeds: [embed] });
+                heartbeatMessageId = message.id;
+                logger.debug('Sent new heartbeat message');
+            }
+        } else {
+            const message = await channel.send({ embeds: [embed] });
+            heartbeatMessageId = message.id;
+            logger.debug('Sent initial heartbeat message');
+        }
+    } catch (err) {
+        logger.error('❌ Failed to send Discord heartbeat:', err.message);
+    }
+}
+
+/**
+ * Start the heartbeat monitoring system
+ */
 function startHeartbeat() {
     log('💓 Heartbeat system starting...', colors.cyan, '');
     
-    // Console heartbeat every 5 minutes
+    // Console and Discord heartbeat every 5 minutes
     heartbeatInterval = setInterval(async () => {
         const uptime = process.uptime();
         const hours = Math.floor(uptime / 3600);
@@ -169,451 +275,152 @@ function startHeartbeat() {
     }, 60 * 1000); // Check every minute
 }
 
-// Send heartbeat status to Discord channel
-async function sendDiscordHeartbeat() {
-    if (!HEARTBEAT_CHANNEL_ID) {
-        logger.debug('HEARTBEAT_CHANNEL_ID not configured - skipping Discord heartbeat');
-        return;
-    }
-    
-    try {
-        const channel = await client.channels.fetch(HEARTBEAT_CHANNEL_ID).catch(() => null);
-        if (!channel) {
-            logger.warn(`Heartbeat channel ${HEARTBEAT_CHANNEL_ID} not found or bot lacks access`);
-            return;
-        }
-        
-        const uptime = process.uptime();
-        const days = Math.floor(uptime / 86400);
-        const hours = Math.floor((uptime % 86400) / 3600);
-        const minutes = Math.floor((uptime % 3600) / 60);
-        const memUsage = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
-        const totalMembers = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
-        
-        const embed = new EmbedBuilder()
-            .setColor('#00ff00')
-            .setTitle('💓 Bot Heartbeat')
-            .setDescription(`System is healthy and operational`)
-            .addFields(
-                { 
-                    name: '⏱️ Uptime', 
-                    value: `${days}d ${hours}h ${minutes}m`,
-                    inline: true 
-                },
-                { 
-                    name: '📊 Memory', 
-                    value: `${memUsage} MB`,
-                    inline: true 
-                },
-                { 
-                    name: '🏓 Latency', 
-                    value: `${client.ws.ping}ms`,
-                    inline: true 
-                },
-                { 
-                    name: '🏠 Servers', 
-                    value: `${client.guilds.cache.size}`,
-                    inline: true 
-                },
-                { 
-                    name: '👥 Total Users', 
-                    value: `${totalMembers.toLocaleString()}`,
-                    inline: true 
-                },
-                { 
-                    name: '💬 Commands', 
-                    value: `${client.commands.size}`,
-                    inline: true 
-                }
-            )
-            .setFooter({ text: `Last check: ${new Date().toLocaleString()}` })
-            .setTimestamp();
-
-        // Try to edit existing message, otherwise send new one
-        if (heartbeatMessageId) {
-            try {
-                const message = await channel.messages.fetch(heartbeatMessageId);
-                await message.edit({ embeds: [embed] });
-            } catch (err) {
-                // Message not found, send new one
-                const sentMessage = await channel.send({ embeds: [embed] });
-                heartbeatMessageId = sentMessage.id;
-            }
-        } else {
-            const sentMessage = await channel.send({ embeds: [embed] });
-            heartbeatMessageId = sentMessage.id;
-        }
-    } catch (err) {
-        logger.error('❌ Failed to send Discord heartbeat:', err.message);
-    }
-}
-
 // ============================================================================
 // COMMAND LOADING
 // ============================================================================
 
-// Load slash commands
-const commands = [];
 const commandsPath = path.join(__dirname, 'commands');
-const commandFolders = fs.readdirSync(commandsPath);
+if (fs.existsSync(commandsPath)) {
+    const commandFolders = fs.readdirSync(commandsPath);
 
-log('📂 Loading commands...', colors.cyan, '');
+    for (const folder of commandFolders) {
+        const folderPath = path.join(commandsPath, folder);
+        if (!fs.statSync(folderPath).isDirectory()) continue;
 
-for (const folder of commandFolders) {
-    const folderPath = path.join(commandsPath, folder);
-    
-    // Skip if not a directory
-    if (!fs.statSync(folderPath).isDirectory()) continue;
-    
-    const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith('.js'));
-    
-    for (const file of commandFiles) {
-        const filePath = path.join(folderPath, file);
-        const command = require(filePath);
-        
-        if ('data' in command && 'execute' in command) {
-            client.commands.set(command.data.name, command);
-            commands.push(command.data.toJSON());
-            log(`  ✓ Loaded: ${command.data.name}`, colors.green, '');
-        } else {
-            log(`  ⚠️  Skipped: ${file} (missing data or execute)`, colors.yellow, '');
+        const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith('.js'));
+
+        for (const file of commandFiles) {
+            const filePath = path.join(folderPath, file);
+            try {
+                const command = require(filePath);
+                
+                if ('data' in command && 'execute' in command) {
+                    client.commands.set(command.data.name, command);
+                    log(`✓ Loaded command: ${command.data.name}`, colors.green, '');
+                } else {
+                    log(`⚠  Command at ${filePath} is missing required "data" or "execute" property`, colors.yellow, '');
+                }
+            } catch (error) {
+                log(`✗ Failed to load command: ${file}`, colors.red, '');
+                logger.error(`Error loading command ${file}:`, error);
+            }
         }
     }
 }
 
-log(`✅ Loaded ${commands.length} commands`, colors.green, '');
-
 // ============================================================================
-// INTERACTION HANDLERS
+// INTERACTION HANDLER
 // ============================================================================
 
 client.on(Events.InteractionCreate, async interaction => {
-    // Handle slash commands
-    if (interaction.isChatInputCommand()) {
-        const command = client.commands.get(interaction.commandName);
-
-        if (!command) {
-            log(`⚠️  No command matching ${interaction.commandName} was found.`, colors.yellow, '');
-            return;
-        }
-
-        // Cooldown handling
-        const { cooldowns } = client;
-
-        if (!cooldowns.has(command.data.name)) {
-            cooldowns.set(command.data.name, new Collection());
-        }
-
-        const now = Date.now();
-        const timestamps = cooldowns.get(command.data.name);
-        const cooldownAmount = (command.cooldown ?? 3) * 1000;
-
-        if (timestamps.has(interaction.user.id)) {
-            const expirationTime = timestamps.get(interaction.user.id) + cooldownAmount;
-
-            if (now < expirationTime) {
-                const timeLeft = (expirationTime - now) / 1000;
-                return interaction.reply({
-                    content: `⏱️ Please wait ${timeLeft.toFixed(1)} more second(s) before using \`${command.data.name}\` again.`,
-                    ephemeral: true
-                });
+    try {
+        if (interaction.isChatInputCommand()) {
+            const command = client.commands.get(interaction.commandName);
+            if (!command) {
+                logger.warn(`Command not found: ${interaction.commandName}`);
+                return;
             }
-        }
 
-        timestamps.set(interaction.user.id, now);
-        setTimeout(() => timestamps.delete(interaction.user.id), cooldownAmount);
+            // Cooldown check
+            const { cooldowns } = client;
+            if (!cooldowns.has(command.data.name)) {
+                cooldowns.set(command.data.name, new Collection());
+            }
 
-        // Execute command
-        try {
+            const now = Date.now();
+            const timestamps = cooldowns.get(command.data.name);
+            const defaultCooldownDuration = 3;
+            const cooldownAmount = (command.cooldown ?? defaultCooldownDuration) * 1000;
+
+            if (timestamps.has(interaction.user.id)) {
+                const expirationTime = timestamps.get(interaction.user.id) + cooldownAmount;
+
+                if (now < expirationTime) {
+                    const expiredTimestamp = Math.round(expirationTime / 1000);
+                    return interaction.reply({
+                        content: `⏰ Please wait, you are on cooldown. You can use this command again <t:${expiredTimestamp}:R>.`,
+                        ephemeral: true
+                    });
+                }
+            }
+
+            timestamps.set(interaction.user.id, now);
+            setTimeout(() => timestamps.delete(interaction.user.id), cooldownAmount);
+
+            // Execute command
+            log(`⚡ ${interaction.user.tag} used /${interaction.commandName} in ${interaction.guild?.name || 'DM'}`, colors.cyan, '');
             await command.execute(interaction);
-            log(`✅ ${interaction.user.tag} used /${command.data.name} in ${interaction.guild?.name || 'DM'}`, colors.green, '');
-        } catch (error) {
-            logger.error(`Error executing ${interaction.commandName}:`, error);
-            await logErrorToDiscord(error, `Command: /${interaction.commandName}\nUser: ${interaction.user.tag}\nGuild: ${interaction.guild?.name || 'DM'}`);
             
-            const errorMessage = { 
-                content: '❌ There was an error while executing this command!', 
-                ephemeral: true 
-            };
+        } else if (interaction.isButton()) {
+            log(`🔘 ${interaction.user.tag} clicked button: ${interaction.customId}`, colors.magenta, '');
+            // Handle buttons here or in command files
             
-            if (interaction.replied || interaction.deferred) {
-                await interaction.followUp(errorMessage).catch(() => {});
-            } else {
-                await interaction.reply(errorMessage).catch(() => {});
-            }
+        } else if (interaction.isModalSubmit()) {
+            log(`📝 ${interaction.user.tag} submitted modal: ${interaction.customId}`, colors.blue, '');
+            // Handle modals here or in command files
+            
+        } else if (interaction.isStringSelectMenu()) {
+            log(`📋 ${interaction.user.tag} used select menu: ${interaction.customId}`, colors.yellow, '');
+            // Handle select menus here or in command files
         }
-    }
+    } catch (error) {
+        logger.error('Error handling interaction:', error);
+        await logErrorToDiscord(error, `Interaction error: ${interaction.commandName || interaction.customId} by ${interaction.user.tag}`);
+        
+        const errorMessage = {
+            content: '❌ An error occurred while executing this command. The developers have been notified.',
+            ephemeral: true
+        };
 
-    // Handle button interactions
-    if (interaction.isButton()) {
-        await handleEventButton(interaction);
-    }
-
-    // Handle select menu interactions
-    if (interaction.isStringSelectMenu()) {
-        await handleEventSelectMenu(interaction);
-    }
-
-    // Handle modal submissions
-    if (interaction.isModalSubmit()) {
-        await handleEventModal(interaction);
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp(errorMessage);
+        } else {
+            await interaction.reply(errorMessage);
+        }
     }
 });
 
 // ============================================================================
-// EVENT BUTTON HANDLERS
+// MESSAGE EVENTS
 // ============================================================================
 
-async function handleEventButton(interaction) {
-    const customId = interaction.customId;
-    
-    if (!customId.startsWith('event_')) return;
-
-    const [, action, eventId] = customId.split('_');
+client.on(Events.MessageCreate, async message => {
+    if (message.author.bot) return;
     
     try {
-        const event = await db.getEvent(eventId);
+        // Your message handling logic here
         
-        if (!event) {
-            return interaction.reply({ content: '❌ Event not found or has been cancelled!', ephemeral: true });
-        }
-
-        // Check if event is full
-        if (action === 'accept' && event.max_participants > 0) {
-            const acceptedCount = await db.getParticipantCount(eventId, 'accepted');
-            if (acceptedCount >= event.max_participants) {
-                return interaction.reply({ content: '❌ Event is full!', ephemeral: true });
-            }
-        }
-
-        switch (action) {
-            case 'accept':
-                await handleRSVP(interaction, eventId, 'accepted', event);
-                break;
-            case 'tentative':
-                await handleRSVP(interaction, eventId, 'tentative', event);
-                break;
-            case 'late':
-                await handleRSVP(interaction, eventId, 'late', event);
-                break;
-            case 'decline':
-                await handleRSVP(interaction, eventId, 'declined', event);
-                break;
-            case 'setup':
-                await showClassRoleSetup(interaction, eventId);
-                break;
-        }
     } catch (error) {
-        logger.error('Error handling event button:', error);
-        await logErrorToDiscord(error, `Event button error: ${customId}`);
-        await interaction.reply({ content: '❌ An error occurred processing your response.', ephemeral: true }).catch(() => {});
+        logger.error('Error handling message:', error);
+        await logErrorToDiscord(error, `Message error from ${message.author.tag} in ${message.guild?.name || 'DM'}`);
     }
-}
-
-async function handleRSVP(interaction, eventId, status, event) {
-    const userId = interaction.user.id;
-
-    // If it's a WoW event and user is accepting, show class/role setup
-    if (status === 'accepted' && event.event_type.startsWith('wow-')) {
-        // First add them with basic status
-        await db.addEventParticipant(eventId, userId, status);
-        
-        // Then show class/role setup
-        await showClassRoleSetup(interaction, eventId, true);
-        return;
-    }
-
-    // For non-WoW events or non-accept status
-    await db.addEventParticipant(eventId, userId, status);
-
-    const statusEmoji = {
-        'accepted': '✅',
-        'tentative': '❓',
-        'late': '⏰',
-        'declined': '❌'
-    };
-
-    const statusName = {
-        'accepted': 'Accepted',
-        'tentative': 'Marked as Tentative',
-        'late': 'Marked as Late',
-        'declined': 'Declined'
-    };
-
-    await interaction.reply({
-        content: `${statusEmoji[status]} ${statusName[status]} for **${event.title}**!`,
-        ephemeral: true
-    });
-
-    // Update the event message
-    await updateEventMessage(interaction, eventId, event);
-}
-
-async function showClassRoleSetup(interaction, eventId, isFirstTime = false) {
-    const eventCommand = require('./commands/utility/event');
-    
-    // Create class selection menu
-    const classOptions = Object.entries(eventCommand.WOW_CLASSES).map(([key, data]) => 
-        new StringSelectMenuOptionBuilder()
-            .setLabel(data.name)
-            .setDescription(`Play as ${data.name}`)
-            .setValue(key)
-            .setEmoji(data.emoji)
-    );
-
-    const classSelect = new StringSelectMenuBuilder()
-        .setCustomId(`event_class_${eventId}`)
-        .setPlaceholder('Select your class')
-        .addOptions(classOptions);
-
-    const row = new ActionRowBuilder().addComponents(classSelect);
-
-    const message = isFirstTime 
-        ? `✅ You've been added to the event! Now, please select your class and role:`
-        : `🎮 Select your class for this event:`;
-
-    await interaction.reply({
-        content: message,
-        components: [row],
-        ephemeral: true
-    });
-}
-
-async function handleEventSelectMenu(interaction) {
-    const customId = interaction.customId;
-    
-    if (!customId.startsWith('event_')) return;
-
-    const [, type, eventId] = customId.split('_');
-
-    try {
-        if (type === 'class') {
-            const selectedClass = interaction.values[0];
-            
-            // Show role selection
-            const eventCommand = require('./commands/utility/event');
-            const roleOptions = Object.entries(eventCommand.WOW_ROLES).map(([key, data]) =>
-                new StringSelectMenuOptionBuilder()
-                    .setLabel(data.name)
-                    .setDescription(`Play as ${data.name}`)
-                    .setValue(key)
-                    .setEmoji(data.emoji)
-            );
-
-            const roleSelect = new StringSelectMenuBuilder()
-                .setCustomId(`event_role_${eventId}_${selectedClass}`)
-                .setPlaceholder('Select your role')
-                .addOptions(roleOptions);
-
-            const row = new ActionRowBuilder().addComponents(roleSelect);
-
-            await interaction.update({
-                content: `Selected: ${eventCommand.WOW_CLASSES[selectedClass].emoji} **${eventCommand.WOW_CLASSES[selectedClass].name}**\n\nNow select your role:`,
-                components: [row]
-            });
-        } else if (type === 'role') {
-            const [, , eventIdPart, selectedClass] = customId.split('_');
-            const selectedRole = interaction.values[0];
-
-            // Update participant with class and role
-            await db.updateParticipantClass(eventIdPart, interaction.user.id, selectedClass, selectedRole);
-
-            const eventCommand = require('./commands/utility/event');
-            const classData = eventCommand.WOW_CLASSES[selectedClass];
-            const roleData = eventCommand.WOW_ROLES[selectedRole];
-
-            await interaction.update({
-                content: `✅ Setup complete!\n\n` +
-                        `${classData.emoji} **Class:** ${classData.name}\n` +
-                        `${roleData.emoji} **Role:** ${roleData.name}\n\n` +
-                        `You're all set for the event!`,
-                components: []
-            });
-
-            // Update the event message
-            const event = await db.getEvent(eventIdPart);
-            if (event && event.message_id && event.channel_id) {
-                const channel = await interaction.guild.channels.fetch(event.channel_id);
-                if (channel) {
-                    const message = await channel.messages.fetch(event.message_id);
-                    const participants = await db.getEventParticipants(eventIdPart);
-                    const embed = eventCommand.createEventEmbed(event, participants);
-                    await message.edit({ embeds: [embed] });
-                }
-            }
-        }
-    } catch (error) {
-        logger.error('Error handling event select menu:', error);
-        await logErrorToDiscord(error, `Event select menu error: ${customId}`);
-        await interaction.reply({ content: '❌ An error occurred.', ephemeral: true }).catch(() => {});
-    }
-}
-
-async function handleEventModal(interaction) {
-    // Handle any event-related modals here
-    // Currently not used, but ready for future features like adding notes
-}
-
-async function updateEventMessage(interaction, eventId, event) {
-    try {
-        if (!event.message_id || !event.channel_id) return;
-
-        const channel = await interaction.guild.channels.fetch(event.channel_id);
-        if (!channel) return;
-
-        const message = await channel.messages.fetch(event.message_id);
-        if (!message) return;
-
-        const participants = await db.getEventParticipants(eventId);
-        const eventCommand = require('./commands/utility/event');
-        const embed = eventCommand.createEventEmbed(event, participants);
-
-        await message.edit({ embeds: [embed] });
-    } catch (error) {
-        logger.error('Error updating event message:', error);
-    }
-}
+});
 
 // ============================================================================
-// MEMBER JOIN/LEAVE EVENTS
+// MEMBER EVENTS
 // ============================================================================
 
-// Member join event
 client.on(Events.GuildMemberAdd, async member => {
     try {
         log(`👋 ${member.user.tag} joined ${member.guild.name}`, colors.green, '');
 
         const guildConfig = await db.getGuildConfig(member.guild.id);
-        if (!guildConfig) return;
+        if (!guildConfig || !guildConfig.welcome_channel_id || !guildConfig.welcome_message) return;
 
-        // Welcome message
-        if (guildConfig.welcome_channel_id && guildConfig.welcome_message) {
-            const channel = member.guild.channels.cache.get(guildConfig.welcome_channel_id);
-            if (channel) {
-                const welcomeMessage = guildConfig.welcome_message
-                    .replace('{user}', `<@${member.id}>`)
-                    .replace('{username}', member.user.username)
-                    .replace('{server}', member.guild.name)
-                    .replace('{membercount}', member.guild.memberCount.toString());
+        const channel = member.guild.channels.cache.get(guildConfig.welcome_channel_id);
+        if (channel) {
+            const welcomeMessage = guildConfig.welcome_message
+                .replace('{user}', `<@${member.id}>`)
+                .replace('{server}', member.guild.name);
 
-                const embed = new EmbedBuilder()
-                    .setColor('#00ff00')
-                    .setTitle('👋 Welcome!')
-                    .setDescription(welcomeMessage)
-                    .setThumbnail(member.user.displayAvatarURL())
-                    .setTimestamp();
+            const embed = new EmbedBuilder()
+                .setColor('#00ff00')
+                .setTitle('👋 Welcome!')
+                .setDescription(welcomeMessage)
+                .setThumbnail(member.user.displayAvatarURL())
+                .setTimestamp();
 
-                await channel.send({ embeds: [embed] });
-            }
-        }
-
-        // Auto-role
-        if (guildConfig.auto_role_id) {
-            const role = member.guild.roles.cache.get(guildConfig.auto_role_id);
-            if (role) {
-                await member.roles.add(role);
-                log(`  ✓ Added auto-role to ${member.user.tag}`, colors.green, '');
-            }
+            await channel.send({ embeds: [embed] });
         }
     } catch (error) {
         logger.error('Error handling member join:', error);
@@ -621,7 +428,6 @@ client.on(Events.GuildMemberAdd, async member => {
     }
 });
 
-// Member leave event
 client.on(Events.GuildMemberRemove, async member => {
     try {
         log(`👋 ${member.user.tag} left ${member.guild.name}`, colors.yellow, '');
@@ -650,13 +456,15 @@ client.on(Events.GuildMemberRemove, async member => {
     }
 });
 
-// Guild create event (bot joins server)
+// ============================================================================
+// GUILD EVENTS (JOIN/LEAVE SERVER)
+// ============================================================================
+
 client.on(Events.GuildCreate, async guild => {
     log(`✅ Joined new guild: ${guild.name} (${guild.id}) - ${guild.memberCount} members`, colors.green, '');
     await logServerEvent(guild, 'join');
 });
 
-// Guild delete event (bot leaves server)
 client.on(Events.GuildDelete, async guild => {
     log(`❌ Left guild: ${guild.name} (${guild.id})`, colors.red, '');
     await logServerEvent(guild, 'leave');
@@ -684,28 +492,24 @@ client.once(Events.ClientReady, async () => {
     log('╚════════════════════════════════════════════════════════════╝', colors.cyan, '');
     log('', colors.cyan, '');
     
-    // Verify error logging channel
-    if (ERROR_LOG_CHANNEL_ID) {
-        try {
-            const errorChannel = await client.channels.fetch(ERROR_LOG_CHANNEL_ID);
-            log(`✅ Error log channel verified: #${errorChannel.name}`, colors.green, '');
-        } catch (err) {
-            log(`⚠️  Error log channel ${ERROR_LOG_CHANNEL_ID} not found or inaccessible`, colors.yellow, '');
+    // Verify logging channels
+    const channels = [
+        { id: ERROR_LOG_CHANNEL_ID, name: 'Error Log', env: 'ERROR_LOG_CHANNEL_ID' },
+        { id: HEARTBEAT_CHANNEL_ID, name: 'Heartbeat', env: 'HEARTBEAT_CHANNEL_ID' },
+        { id: SERVER_LOG_CHANNEL_ID, name: 'Server Log', env: 'SERVER_LOG_CHANNEL_ID' }
+    ];
+
+    for (const channelInfo of channels) {
+        if (channelInfo.id) {
+            try {
+                const channel = await client.channels.fetch(channelInfo.id);
+                log(`✅ ${channelInfo.name} channel verified: #${channel.name}`, colors.green, '');
+            } catch (err) {
+                log(`⚠️  ${channelInfo.name} channel ${channelInfo.id} not found or inaccessible`, colors.yellow, '');
+            }
+        } else {
+            log(`⚠️  ${channelInfo.env} not configured in .env`, colors.yellow, '');
         }
-    } else {
-        log(`⚠️  ERROR_LOG_CHANNEL_ID not configured in .env`, colors.yellow, '');
-    }
-    
-    // Verify heartbeat channel
-    if (HEARTBEAT_CHANNEL_ID) {
-        try {
-            const heartbeatChannel = await client.channels.fetch(HEARTBEAT_CHANNEL_ID);
-            log(`✅ Heartbeat channel verified: #${heartbeatChannel.name}`, colors.green, '');
-        } catch (err) {
-            log(`⚠️  Heartbeat channel ${HEARTBEAT_CHANNEL_ID} not found or inaccessible`, colors.yellow, '');
-        }
-    } else {
-        log(`⚠️  HEARTBEAT_CHANNEL_ID not configured in .env`, colors.yellow, '');
     }
     
     // Start heartbeat system
@@ -729,13 +533,30 @@ process.on('uncaughtException', async (error) => {
     log(`❌ Uncaught Exception: ${error.message}`, colors.red, '');
     logger.error('Uncaught exception:', error);
     await logErrorToDiscord(error, 'Uncaught Exception - Critical error that may cause instability');
+    
+    // Give time for Discord message to send before crashing
+    setTimeout(() => {
+        process.exit(1);
+    }, 1000);
+});
+
+// Discord.js error events
+client.on('error', async (error) => {
+    log(`❌ Discord Client Error: ${error.message}`, colors.red, '');
+    logger.error('Discord client error:', error);
+    await logErrorToDiscord(error, 'Discord.js Client Error');
+});
+
+client.on('warn', (warning) => {
+    log(`⚠️  Discord Client Warning: ${warning}`, colors.yellow, '');
+    logger.warn('Discord client warning:', warning);
 });
 
 // ============================================================================
 // SCHEDULED TASKS
 // ============================================================================
 
-// Daily cleanup
+// Daily cleanup at midnight
 cron.schedule('0 0 * * *', async () => {
     try {
         await db.cleanupOldData();
@@ -795,6 +616,11 @@ process.on('SIGINT', async () => {
     log('✅ Shutdown complete!', colors.green, '');
     log('', colors.reset, '');
     process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+    log('⚠️  SIGTERM received, shutting down gracefully...', colors.yellow, '');
+    process.kill(process.pid, 'SIGINT');
 });
 
 // ============================================================================

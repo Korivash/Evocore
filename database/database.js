@@ -470,11 +470,11 @@ async function getAllCustomCommands(guildId) {
     return rows;
 }
 
-async function createEvent(guildId, organizerId, title, description, eventDate, eventType, maxParticipants) {
+async function createEvent(guildId, organizerId, title, description, eventDate, eventType, maxParticipants, channelId) {
     const [result] = await pool.query(
-        `INSERT INTO guild_events (guild_id, organizer_id, title, description, event_date, event_type, max_participants)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [guildId, organizerId, title, description, eventDate, eventType, maxParticipants]
+        `INSERT INTO guild_events (guild_id, organizer_id, title, description, event_date, event_type, max_participants, channel_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [guildId, organizerId, title, description, eventDate, eventType, maxParticipants, channelId]
     );
     return result.insertId;
 }
@@ -504,6 +504,13 @@ async function updateEventMessage(eventId, channelId, messageId) {
     await pool.query(
         'UPDATE guild_events SET channel_id = ?, message_id = ? WHERE id = ?',
         [channelId, messageId, eventId]
+    );
+}
+
+async function updateEventMessageId(eventId, messageId) {
+    await pool.query(
+        'UPDATE guild_events SET message_id = ? WHERE id = ?',
+        [messageId, eventId]
     );
 }
 
@@ -580,13 +587,6 @@ async function getUpcomingEvents(guildId, limit = 25) {
     return rows;
 }
 
-async function updateEventMessageId(eventId, messageId) {
-    await pool.query(
-        'UPDATE guild_events SET message_id = ? WHERE id = ?',
-        [messageId, eventId]
-    );
-}
-
 async function cleanupOldData() {
     await pool.query(
         'DELETE FROM command_stats WHERE used_at < DATE_SUB(NOW(), INTERVAL 90 DAY)'
@@ -645,6 +645,7 @@ module.exports = {
     getEvent,
     getGuildEvents,
     updateEventMessage,
+    updateEventMessageId,
     cancelEvent,
     deleteEvent,
     addEventParticipant,
@@ -653,6 +654,7 @@ module.exports = {
     getParticipantCount,
     updateParticipantClass,
     updateParticipantNotes,
+    getUpcomingEvents,
     cleanupOldData,
     close
 };

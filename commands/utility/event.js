@@ -165,7 +165,7 @@ async function handleCreate(interaction) {
     );
 
     // Create event embed
-    const embed = createEventEmbed({
+    const embed = await createEventEmbed({
         id: eventId,
         title,
         description,
@@ -173,7 +173,7 @@ async function handleCreate(interaction) {
         event_type: type,
         max_participants: maxParticipants,
         organizer_id: interaction.user.id
-    }, []);
+    }, [], interaction.client);
 
     // Create RSVP buttons
     const rows = createRSVPButtons(eventId, type);
@@ -210,51 +210,50 @@ async function handleCancel(interaction) {
         return interaction.editReply({ content: '❌ You can only cancel your own events!' });
     }
 
-    // Cancel event
     await db.cancelEvent(eventId);
 
-    // Update event message
+    // Try to update the event message
     try {
-        const channel = await interaction.guild.channels.fetch(event.channel_id);
-        if (channel && event.message_id) {
-            const message = await channel.messages.fetch(event.message_id);
-            
-            const embed = new EmbedBuilder()
-                .setColor('#ff0000')
-                .setTitle(`❌ CANCELLED: ${event.title}`)
-                .setDescription(event.description)
-                .addFields(
-                    { name: 'Cancellation Reason', value: reason, inline: false },
-                    { name: 'Cancelled By', value: `<@${interaction.user.id}>`, inline: true },
-                    { name: 'Original Date', value: `<t:${Math.floor(new Date(event.event_date).getTime() / 1000)}:F>`, inline: true }
-                )
-                .setTimestamp();
+        const channel = await interaction.client.channels.fetch(event.channel_id);
+        const message = await channel.messages.fetch(event.message_id);
+        
+        const cancelEmbed = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setTitle(`❌ CANCELLED: ${event.title}`)
+            .setDescription(`**Reason:** ${reason}\n\n~~${event.description}~~`)
+            .addFields(
+                { name: '📅 Was scheduled for', value: `<t:${Math.floor(new Date(event.event_date).getTime() / 1000)}:F>`, inline: false },
+                { name: '👤 Organizer', value: `<@${event.organizer_id}>`, inline: false }
+            )
+            .setFooter({ text: `Event ID: ${event.id}` })
+            .setTimestamp();
 
-            await message.edit({ embeds: [embed], components: [] });
-        }
+        await message.edit({ embeds: [cancelEmbed], components: [] });
     } catch (error) {
-        console.error('Error updating cancelled event message:', error);
+        console.error('Failed to update event message:', error);
     }
 
-    // Notify participants
+    // Notify all accepted/tentative participants
     const participants = await db.getEventParticipants(eventId);
-    const notificationChannel = await interaction.guild.channels.fetch(event.channel_id);
-    
-    if (notificationChannel && participants.length > 0) {
-        const mentions = participants.map(p => `<@${p.user_id}>`).join(' ');
-        await notificationChannel.send({
-            content: `${mentions}\n⚠️ **Event Cancelled:** ${event.title}\n**Reason:** ${reason}`
-        });
+    for (const participant of participants) {
+        if (participant.status === 'accepted' || participant.status === 'tentative') {
+            try {
+                const user = await interaction.client.users.fetch(participant.user_id);
+                await user.send(`📢 The event **${event.title}** scheduled for <t:${Math.floor(new Date(event.event_date).getTime() / 1000)}:F> has been cancelled.\n\n**Reason:** ${reason}`);
+            } catch (error) {
+                console.error(`Failed to notify user ${participant.user_id}:`, error);
+            }
+        }
     }
 
-    await interaction.editReply({ content: `✅ Event "${event.title}" has been cancelled.` });
+    await interaction.editReply({ content: `✅ Event cancelled and participants notified.` });
 }
 
 async function handleList(interaction) {
     await interaction.deferReply();
 
     const events = await db.getUpcomingEvents(interaction.guild.id);
-
+    
     if (events.length === 0) {
         return interaction.editReply({ content: '📅 No upcoming events!' });
     }
@@ -376,7 +375,7 @@ async function handleRoster(interaction) {
     await interaction.editReply({ embeds: [embed] });
 }
 
-function createEventEmbed(event, participants) {
+async function createEventEmbed(event, participants, client) {
     const embed = new EmbedBuilder()
         .setTitle(event.title)
         .setDescription(event.description)
@@ -396,6 +395,72 @@ function createEventEmbed(event, participants) {
             name: '👥 Participants',
             value: `${acceptedCount}/${event.max_participants}`,
             inline: true
+        });
+    }
+
+    // Group participants by status
+    const byStatus = {
+        accepted: [],
+        tentative: [],
+        late: [],
+        declined: []
+    };
+
+    // Fetch user data and organize by status
+    for (const participant of participants) {
+        let line = '';
+        
+        // Fetch user to get their display name
+        try {
+            const user = await client.users.fetch(participant.user_id);
+            line = `**${user.displayName || user.username}**`;
+        } catch (error) {
+            line = `<@${participant.user_id}>`;
+        }
+        
+        // Add class and role info for WoW events
+        const eventType = event.event_type || event.type || '';
+        if (eventType.startsWith('wow-') && participant.wow_class && participant.wow_role) {
+            const classData = WOW_CLASSES[participant.wow_class];
+            const roleData = WOW_ROLES[participant.wow_role];
+            if (classData && roleData) {
+                line += ` - ${classData.emoji} ${classData.name} (${roleData.emoji} ${roleData.name})`;
+            }
+        }
+
+        byStatus[participant.status].push(line);
+    }
+
+    // Add participant lists to embed
+    if (byStatus.accepted.length > 0) {
+        embed.addFields({
+            name: `${RSVP_STATUS.accepted.emoji} Accepted (${byStatus.accepted.length})`,
+            value: byStatus.accepted.join('\n'),
+            inline: false
+        });
+    }
+
+    if (byStatus.tentative.length > 0) {
+        embed.addFields({
+            name: `${RSVP_STATUS.tentative.emoji} Tentative (${byStatus.tentative.length})`,
+            value: byStatus.tentative.join('\n'),
+            inline: false
+        });
+    }
+
+    if (byStatus.late.length > 0) {
+        embed.addFields({
+            name: `${RSVP_STATUS.late.emoji} Will Be Late (${byStatus.late.length})`,
+            value: byStatus.late.join('\n'),
+            inline: false
+        });
+    }
+
+    if (byStatus.declined.length > 0) {
+        embed.addFields({
+            name: `${RSVP_STATUS.declined.emoji} Declined (${byStatus.declined.length})`,
+            value: byStatus.declined.join('\n'),
+            inline: false
         });
     }
 

@@ -483,6 +483,8 @@ Each server can be configured independently. All settings are stored in the MySQ
 | `/wow-token` | Current token price | `/wow-token` |
 | `/overwatch` | Overwatch profile | `/overwatch battletag:"Player#1234" [platform]` |
 | `/d4-character` | Diablo 4 character | `/d4-character battletag:"Player#1234" character-id:"123"` |
+| `/portrait : Get a Portrait of your character` | WoW character | `/portrait charactername:"Korivash" realm:"area-52"` |
+
 
 ### 📊 Utility Commands
 
@@ -739,6 +741,7 @@ All Blizzard API responses are cached for 60 minutes:
 /wow-mythic realm:"Area-52" name:"Jaina"
 /wow-pvp realm:"Illidan" name:"Thrall"
 /wow-token
+/portrait : Get a Portrait of your character
 ```
 
 **Overwatch:**

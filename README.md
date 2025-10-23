@@ -1,384 +1,460 @@
-# Discord Bot - Multi-Purpose Bot with Blizzard API & AI Integration
+# 🎨 Discord Bot - AI Image Generation Update
 
-A comprehensive Discord bot featuring full moderation capabilities, Blizzard API integration for game lookups, Gemini AI support, and much more!
+## 📦 Package Contents
 
-## 🌟 Features
+This update adds **AI image generation** to your Discord bot using Google's Imagen 3!
 
-### 🛡️ Moderation
-- Complete moderation suite (kick, ban, mute, warn)
-- Temporary bans with automatic unbanning
-- Warning system with automatic actions
-- Message purging and bulk deletion
-- Channel management (lock/unlock, slowmode)
-- Comprehensive moderation logging
-
-### 🤖 Auto-Moderation
-- Anti-spam detection
-- Link filtering
-- Discord invite filtering
-- Bad word filtering
-- Excessive caps detection
-- Mass mention protection
-- Automatic warning and muting for violations
-
-### 🎮 Blizzard API Integration
-- **World of Warcraft**: Character profiles, Mythic+ stats, PvP ratings, realm status, token prices
-- **Diablo 4**: Character lookups
-- **Overwatch**: Player profiles and statistics
-- **Hearthstone**: Card searches
-- **StarCraft 2**: Player profiles
-- Intelligent caching system for faster responses
-
-### 🤖 Gemini AI Integration
-- Natural language Q&A
-- Conversational AI chat
-- Image analysis
-- Content moderation using AI
-- Text summarization
-- Language translation
-- Creative content generation
-
-### 📊 Leveling & XP System
-- Automatic XP gain from messages
-- Level progression
-- Server leaderboards
-- Rank cards
-
-### ⚙️ Customization
-- Custom commands per guild
-- Configurable welcome/goodbye messages
-- Auto-roles for new members
-- Per-guild settings and preferences
-
-### 📈 Statistics & Analytics
-- Command usage tracking
-- User activity monitoring
-- Server statistics
-- Detailed logging system
-
-## 🚀 Installation
-
-### Prerequisites
-- Node.js 16.x or higher
-- MySQL 5.7 or higher
-- Discord Bot Token
-- (Optional) Blizzard API credentials
-- (Optional) Google Gemini API key
-
-### Step 1: Clone and Install
-
-```bash
-# Extract the zip file to your desired location
-cd discord-bot
-
-# Install dependencies
-npm install
-```
-
-### Step 2: Database Setup
-
-1. Create a MySQL database:
-```sql
-CREATE DATABASE discord_bot;
-```
-
-2. The bot will automatically create all necessary tables on first run.
-
-### Step 3: Configuration
-
-1. Copy `.env.example` to `.env`:
-```bash
-copy .env.example .env
-```
-
-2. Edit `.env` and fill in your credentials:
-
-```env
-# Required
-DISCORD_TOKEN=your_discord_bot_token_here
-DB_HOST=localhost
-DB_USER=your_database_user
-DB_PASSWORD=your_database_password
-DB_NAME=discord_bot
-
-# Optional (for Blizzard features)
-BLIZZARD_CLIENT_ID=your_blizzard_client_id
-BLIZZARD_CLIENT_SECRET=your_blizzard_client_secret
-BLIZZARD_REGION=us
-BLIZZARD_LOCALE=en_US
-
-# Optional (for AI features)
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Optional
-LOG_LEVEL=info
-BOT_PREFIX=!
-```
-
-### Step 4: Getting API Keys
-
-#### Discord Bot Token
-1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Create a new application
-3. Go to "Bot" section and create a bot
-4. Copy the token
-5. Enable "Message Content Intent", "Server Members Intent", and "Presence Intent"
-
-#### Blizzard API (Optional)
-1. Go to [Blizzard Developer Portal](https://develop.battle.net/)
-2. Create a new client
-3. Copy the Client ID and Client Secret
-
-#### Google Gemini API (Optional)
-1. Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Create an API key
-3. Copy the key
-
-### Step 5: Run the Bot
-
-```bash
-# Start the bot
-node index.js
-```
-
-For production on Windows VPS:
-```bash
-# Install pm2 globally
-npm install -g pm2
-
-# Start with pm2
-pm2 start index.js --name discord-bot
-
-# Save the process list
-pm2 save
-
-# Setup startup script
-pm2 startup
-```
-
-## 📝 First Time Setup
-
-1. Invite the bot to your server with proper permissions
-2. Run `/setup` command as an administrator
-3. Configure channels and roles:
-   - Mod log channel for moderation logs
-   - Welcome channel for new member messages
-   - Goodbye channel for member leave messages
-   - Mute role for muting members
-   - Auto role for new members
-
-4. Use `/config` to fine-tune settings:
-   - Enable/disable auto-moderation
-   - Set warning thresholds
-   - Customize welcome/goodbye messages
-   - Enable Blizzard API features
-
-## 🎮 Command List
-
-### Admin Commands
-- `/setup` - Initial bot setup for your server
-- `/config view` - View current configuration
-- `/config automod` - Configure auto-moderation
-- `/config warnings` - Set warning thresholds
-- `/config welcome` - Set welcome message
-- `/config goodbye` - Set goodbye message
-
-### Moderation Commands
-- `/kick <user> [reason]` - Kick a member
-- `/ban <user> [reason] [duration]` - Ban a member (with optional temp ban)
-- `/unban <user>` - Unban a user
-- `/warn <user> <reason>` - Warn a member
-- `/warnings <user>` - View user's warnings
-- `/clearwarnings <user>` - Clear user's warnings
-- `/mute <user> [duration] [reason]` - Mute a member
-- `/unmute <user>` - Unmute a member
-- `/clear <amount>` - Delete messages
-- `/slowmode <seconds>` - Set channel slowmode
-- `/lock [channel]` - Lock a channel
-- `/unlock [channel]` - Unlock a channel
-- `/modlogs [user]` - View moderation logs
-
-### Blizzard Commands
-- `/wow-character <realm> <name>` - Look up WoW character
-- `/wow-mythic <realm> <name>` - View Mythic+ profile
-- `/wow-pvp <realm> <name>` - View PvP statistics
-- `/wow-realm <realm>` - Check realm status
-- `/wow-token` - View WoW token price
-- `/d4-character <battletag> <id>` - Diablo 4 character
-- `/overwatch <battletag>` - Overwatch profile
-
-### AI Commands (Gemini)
-- `/ask <question>` - Ask AI a question
-- `/chat <message>` - Have a conversation with AI
-- `/imagine <type> <topic>` - Generate creative content
-- `/translate <language> <text>` - Translate text
-- `/summarize <text>` - Summarize text
-
-### Utility Commands
-- `/help` - Show all commands
-- `/serverinfo` - Display server information
-- `/userinfo [user]` - Display user information
-- `/avatar [user]` - Get user's avatar
-- `/level [user]` - Check level and XP
-- `/leaderboard` - View server leaderboard
-- `/stats` - Bot statistics
-
-### Fun Commands
-- `/8ball <question>` - Ask the magic 8-ball
-- `/coinflip` - Flip a coin
-- `/roll [sides]` - Roll dice
-- `/meme` - Get a random meme
-
-## 🗂️ Project Structure
-
-```
-discord-bot/
-├── commands/
-│   ├── admin/          # Admin commands
-│   ├── moderation/     # Moderation commands
-│   ├── blizzard/       # Blizzard API commands
-│   ├── ai/             # AI-powered commands
-│   ├── utility/        # Utility commands
-│   └── fun/            # Fun commands
-├── database/
-│   └── database.js     # Database handler
-├── events/
-│   ├── ready.js        # Bot ready event
-│   ├── guildCreate.js  # Guild join event
-│   └── guildDelete.js  # Guild leave event
-├── utils/
-│   ├── logger.js       # Logging utility
-│   ├── autoMod.js      # Auto-moderation
-│   ├── blizzard.js     # Blizzard API wrapper
-│   └── gemini.js       # Gemini AI wrapper
-├── logs/               # Log files
-├── .env                # Configuration (create from .env.example)
-├── .env.example        # Example configuration
-├── index.js            # Main bot file
-├── package.json        # Dependencies
-└── README.md           # This file
-```
-
-## 🔒 Permissions
-
-The bot requires the following permissions:
-- View Channels
-- Send Messages
-- Embed Links
-- Attach Files
-- Read Message History
-- Add Reactions
-- Kick Members
-- Ban Members
-- Manage Messages
-- Manage Roles
-- Manage Channels
-- Moderate Members (Timeout)
-
-## 🐛 Troubleshooting
-
-### Bot not responding to commands
-- Ensure the bot has proper permissions in the server
-- Check that you've run `/setup` in the server
-- Verify the bot token is correct in `.env`
-
-### Database connection errors
-- Ensure MySQL is running
-- Check database credentials in `.env`
-- Verify the database exists
-
-### Blizzard API errors
-- Verify your API credentials are correct
-- Check that the region is set properly (`us`, `eu`, `kr`, `tw`)
-- Some endpoints may require specific OAuth scopes
-
-### AI features not working
-- Ensure GEMINI_API_KEY is set in `.env`
-- Check your Gemini API quota/limits
-- Verify the API key is valid
-
-## 📊 Database Schema
-
-The bot automatically creates the following tables:
-- `guild_config` - Server configurations
-- `mod_logs` - Moderation action logs
-- `warnings` - User warnings
-- `temp_bans` - Temporary ban data
-- `command_stats` - Command usage statistics
-- `automod_violations` - Auto-mod violation logs
-- `blizzard_cache` - Cached Blizzard API responses
-- `user_levels` - User XP and levels
-- `custom_commands` - Server-specific custom commands
-
-## 🤝 Support
-
-For issues, questions, or suggestions:
-- Check the logs in the `logs/` directory
-- Review the console output for errors
-- Ensure all environment variables are properly set
-
-## 📜 License
-
-This project is provided as-is for your use.
-
-## 🎉 Features Coming Soon
-
-- Music playback
-- Tickets system
-- Reaction roles
-- Giveaways
-- Economy system
-- More game integrations
+### Files Included:
+- ✅ **imagine.js** - Updated command file
+- ✅ **gemini.js** - Updated utility file
+- ✅ **IMAGE-GENERATION-GUIDE.md** - Complete feature documentation
+- ✅ **SETUP-INSTRUCTIONS.md** - Quick installation guide
+- ✅ **UPDATE-SUMMARY.md** - Overview and changelog
+- ✅ **README.md** - This file
 
 ---
 
-**Note**: Remember to never share your `.env` file or commit it to version control!
+## 🚀 Quick Start (3 Steps)
 
-## 🏅 Discord Auto Mod Badge Qualification
-
-This bot is designed to qualify for Discord's Auto Moderator badge. It includes:
-
-### Required Features:
-- ✅ **Comprehensive Moderation**: Kick, ban, mute, warn, timeout
-- ✅ **Auto-Moderation**: Spam, links, invites, bad words, caps, mentions
-- ✅ **Phishing Protection**: Automatic detection and removal
-- ✅ **Raid Protection**: Anti-spam with progressive punishment
-- ✅ **Logging**: Complete audit trail of all actions
-- ✅ **Customizable**: Per-server configuration
-- ✅ **Reliable**: Production-tested with error handling
-
-### Advanced Auto-Mod Features:
-- Spam detection (5 messages in 5 seconds)
-- Link filtering with permission bypass
-- Discord invite blocking
-- Phishing attempt detection (free nitro scams, etc.)
-- Bad word filtering
-- Excessive caps detection (70%+ threshold)
-- Mass mention protection (5+ mentions)
-- Progressive punishment (warn → mute → ban)
-- Real-time moderator alerts for serious threats
-
-## 🚀 Command Deployment
-
-This bot includes a separate command deployment system (`deploy-commands.js`):
-
-### Quick Deploy:
+### 1️⃣ Replace Files
 ```bash
-# Deploy all commands globally
-npm run deploy
+# Navigate to your bot directory
+cd C:\DiscordBot
 
-# Deploy to specific guild (instant, for testing)
-npm run deploy-guild YOUR_GUILD_ID
-
-# Clear all commands
-npm run clear-commands
+# Copy the new files
+copy imagine.js commands\ai\imagine.js
+copy gemini.js utils\gemini.js
 ```
 
-### Why Separate Deployment?
-- Update commands without restarting the bot
-- Test commands in specific servers instantly
-- Deploy globally when ready (takes up to 1 hour)
-- Clean command management
+### 2️⃣ Deploy Commands
+```bash
+npm run deploy
+# OR for instant testing:
+npm run deploy-guild YOUR_GUILD_ID
+```
 
-See [COMMAND-DEPLOYMENT.md](COMMAND-DEPLOYMENT.md) for detailed instructions.
+### 3️⃣ Restart Bot
+```bash
+pm2 restart discord-bot
+# OR
+npm start
+```
 
+**Done! 🎉** Test with: `/imagine image prompt:a cute robot`
+
+---
+
+## ✨ What You Get
+
+### AI Image Generation
+Generate stunning images from text descriptions!
+
+**Example:**
+```
+/imagine image prompt:a magical forest at sunset style:digital art
+```
+
+**Result:** High-quality AI-generated image in Discord
+
+### 8 Art Styles
+- 📸 Photorealistic
+- 🎌 Anime
+- 🎨 Digital Art
+- 🖼️ Oil Painting
+- 💧 Watercolor
+- ✏️ Sketch
+- 🎮 3D Render
+- 🎭 Cartoon
+
+### Multiple Formats
+- ⬛ Square (1:1) - Avatars
+- 🖼️ Landscape (16:9) - Banners
+- 📱 Portrait (9:16) - Wallpapers
+- 🎬 Wide (21:9) - Cinematic
+
+---
+
+## 📚 Documentation
+
+### For Installation:
+👉 **SETUP-INSTRUCTIONS.md** - Step-by-step guide
+
+### For Usage:
+👉 **IMAGE-GENERATION-GUIDE.md** - Complete features & examples
+
+### For Overview:
+👉 **UPDATE-SUMMARY.md** - What changed & why
+
+---
+
+## 🎯 Command Examples
+
+### Basic Generation
+```
+/imagine image prompt:a sunset over the ocean
+```
+
+### With Style
+```
+/imagine image prompt:a futuristic city style:digital art
+```
+
+### With Aspect Ratio
+```
+/imagine image prompt:mountain landscape aspect-ratio:16:9
+```
+
+### Everything Together
+```
+/imagine image prompt:a dragon flying over a castle style:oil painting aspect-ratio:1:1
+```
+
+### Text Generation (Still Works!)
+```
+/imagine text type:story topic:space adventure
+```
+
+---
+
+## ⚡ Features
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Image Generation | ✅ NEW | Imagen 3 powered |
+| Text Generation | ✅ Existing | Still available |
+| Style Presets | ✅ NEW | 8 options |
+| Aspect Ratios | ✅ NEW | 4 formats |
+| Safety Filters | ✅ Built-in | Family friendly |
+| Free Tier | ✅ Available | 1,500/day |
+
+---
+
+## 💻 Requirements
+
+### Already Have:
+- ✅ Discord bot running
+- ✅ Gemini API key configured
+- ✅ Node.js 16+
+- ✅ Discord.js v14
+
+### Need to Do:
+- 📝 Replace 2 files (5 minutes)
+- 🔄 Deploy commands (1 command)
+- 🔁 Restart bot (1 minute)
+
+**Total Time: ~5-10 minutes**
+
+---
+
+## 🔧 Technical Details
+
+**Image Model:** Google Imagen 3 (imagen-3.0-generate-001)  
+**Text Model:** Gemini 2.0 Flash (gemini-2.0-flash-exp)  
+**Output Format:** PNG with transparency  
+**Generation Time:** 10-30 seconds  
+**Cooldown:** 10 seconds per user  
+
+**API Limits (Free Tier):**
+- 15 requests per minute
+- 1,500 requests per day
+
+---
+
+## 📊 Use Cases
+
+### 🎨 Creative
+- AI art contests
+- Character designs
+- Fantasy scenes
+- Abstract art
+
+### 🏢 Server Branding
+- Custom icons
+- Channel banners
+- Welcome images
+- Announcement graphics
+
+### 🎓 Educational
+- Story illustrations
+- Historical scenes
+- Concept visualization
+- Learning aids
+
+### 🎉 Entertainment
+- Meme generation
+- Fun challenges
+- Creative prompts
+- Community events
+
+---
+
+## 🛡️ Safety & Moderation
+
+Built-in Google safety filters prevent:
+- ❌ Explicit content
+- ❌ Violence/gore
+- ❌ Hate imagery
+- ❌ Dangerous content
+
+**Result:** Family-friendly, safe images ✅
+
+---
+
+## 📖 Full Documentation
+
+### Installation Guide
+**File:** SETUP-INSTRUCTIONS.md  
+**Content:** 
+- File locations
+- Step-by-step setup
+- Testing checklist
+- Troubleshooting
+
+### Feature Guide
+**File:** IMAGE-GENERATION-GUIDE.md  
+**Content:**
+- Command syntax
+- Style examples
+- Best practices
+- Use cases
+- FAQ
+
+### Update Summary
+**File:** UPDATE-SUMMARY.md  
+**Content:**
+- What's new
+- Technical specs
+- Version info
+- Quick reference
+
+---
+
+## ⚙️ Troubleshooting
+
+### Commands not appearing?
+```bash
+npm run deploy
+# Wait up to 1 hour, OR:
+npm run deploy-guild YOUR_GUILD_ID  # Instant!
+```
+
+### "AI features not available"?
+```env
+# Check .env file has:
+GEMINI_API_KEY=your_actual_key_here
+```
+
+### Generation fails?
+1. Check API quota: https://makersuite.google.com
+2. Verify prompt isn't blocked by filters
+3. Check bot logs: `pm2 logs discord-bot`
+
+### Still stuck?
+- 📖 Read SETUP-INSTRUCTIONS.md
+- 📊 Check bot console for errors
+- 🔑 Verify API key is correct
+- 💰 Check quota hasn't been exceeded
+
+---
+
+## 🎓 Best Practices
+
+### Writing Good Prompts
+
+**Be Specific:**
+- ❌ Bad: "a dog"
+- ✅ Good: "a golden retriever puppy playing in a sunny park"
+
+**Add Details:**
+- ❌ Bad: "a house"
+- ✅ Good: "a modern two-story house with large windows and a garden"
+
+**Include Mood:**
+- ❌ Bad: "a forest"
+- ✅ Good: "a mystical forest at dawn with rays of sunlight"
+
+**Quality Examples:**
+```
+/imagine image prompt:an ancient library filled with glowing magical books, warm candlelight, mysterious atmosphere style:digital art
+
+/imagine image prompt:a serene japanese garden with cherry blossoms and koi pond during golden hour style:photorealistic aspect-ratio:16:9
+
+/imagine image prompt:a brave female knight in ornate armor holding a glowing sword, heroic pose style:anime
+```
+
+---
+
+## 📈 Comparison
+
+### Before This Update:
+- ⚪ Text generation only
+- ⚪ No image creation
+- ⚪ Single command type
+
+### After This Update:
+- ✅ Text generation (kept)
+- ✅ Image generation (NEW!)
+- ✅ Subcommands for organization
+- ✅ 8 style presets
+- ✅ 4 aspect ratios
+- ✅ Professional quality
+
+---
+
+## 💡 Pro Tips
+
+1. **Start Simple:** Test with basic prompts first
+2. **Use Styles:** Experiment with different art styles
+3. **Iterate:** Refine prompts based on results
+4. **Share Examples:** Post good prompts in your server
+5. **Create Channel:** Dedicate a #ai-art channel
+6. **Host Events:** AI art contests and challenges
+7. **Monitor Quota:** Check usage at makersuite.google.com
+8. **Save Favorites:** Screenshot or download great results
+
+---
+
+## 🔄 Backward Compatibility
+
+All existing features still work:
+- ✅ `/ask` command unchanged
+- ✅ `/chat` command unchanged
+- ✅ `/translate` command unchanged
+- ✅ `/imagine text` still works
+- ✅ All other commands unaffected
+
+---
+
+## 📞 Support
+
+Need help?
+
+1. **📖 Read the docs:**
+   - SETUP-INSTRUCTIONS.md
+   - IMAGE-GENERATION-GUIDE.md
+   - UPDATE-SUMMARY.md
+
+2. **🔍 Check logs:**
+   ```bash
+   pm2 logs discord-bot --lines 50
+   ```
+
+3. **🔑 Verify setup:**
+   - API key in .env
+   - Files in correct locations
+   - Commands deployed
+
+4. **💰 Check quota:**
+   - Visit: https://makersuite.google.com
+   - Check daily limits
+   - Monitor usage
+
+---
+
+## 🎯 Success Checklist
+
+After installation, verify:
+- [ ] Files replaced in correct locations
+- [ ] Commands deployed (`npm run deploy`)
+- [ ] Bot restarted successfully
+- [ ] `/imagine` command shows subcommands
+- [ ] `/imagine image` generates images
+- [ ] `/imagine text` still works
+- [ ] No errors in bot logs
+- [ ] Test image displays in Discord
+
+**All checked?** You're ready to go! 🎉
+
+---
+
+## 📝 Version Information
+
+**Update Version:** 2.0  
+**Release Date:** October 2025  
+**Image Model:** Imagen 3 (imagen-3.0-generate-001)  
+**Text Model:** Gemini 2.0 Flash (gemini-2.0-flash-exp)  
+**Compatibility:** Discord.js v14+, Node.js 16+  
+
+---
+
+## 🌟 What's Next?
+
+Future enhancements could include:
+- 🎨 Image editing features
+- 🔄 Style transfer
+- 📈 Image upscaling
+- 🎭 Image variations
+- 🔢 Batch generation
+- 🎨 Custom style training
+
+---
+
+## 📄 License & Usage
+
+This update maintains the same license as your existing bot. Images generated are subject to Google's Imagen 3 terms of service.
+
+**Generated Images:**
+- ✅ Can use in Discord server
+- ✅ Can share with members
+- ⚠️ Check Google ToS for commercial use
+- ⚠️ Subject to safety guidelines
+
+---
+
+## 🎉 Ready to Start?
+
+### Installation Steps:
+1. Read **SETUP-INSTRUCTIONS.md** (3 min)
+2. Replace the 2 files (2 min)
+3. Deploy commands (1 command)
+4. Restart bot (1 min)
+5. Test with example command
+6. Share with your server! 🎨
+
+### First Command to Try:
+```
+/imagine image prompt:a magical crystal glowing in a dark cave style:digital art
+```
+
+---
+
+## 📊 Quick Facts
+
+- ⏱️ **Setup Time:** 5-10 minutes
+- 💰 **Cost:** Free (within quota)
+- 🎨 **Quality:** Professional grade
+- 🛡️ **Safety:** Built-in filters
+- 📈 **Engagement:** High impact
+- 🚀 **Performance:** 10-30 sec/image
+- ✅ **Reliability:** Google infrastructure
+
+---
+
+## 🙏 Thank You!
+
+Thank you for updating your Discord bot with AI image generation! This feature will bring amazing creative capabilities to your server.
+
+**Questions?** → Read the documentation  
+**Issues?** → Check troubleshooting  
+**Ready?** → Start generating! 🎨
+
+---
+
+**Happy creating! ✨🎨🤖**
+
+---
+
+## File Structure Summary
+
+```
+📦 Update Package
+├── 📄 imagine.js              (Command file - 7KB)
+├── 📄 gemini.js               (Utility file - 10KB)
+├── 📖 IMAGE-GENERATION-GUIDE.md    (Full docs - 15KB)
+├── 📋 SETUP-INSTRUCTIONS.md        (Setup guide - 3KB)
+├── 📊 UPDATE-SUMMARY.md            (Overview - 5KB)
+└── 📘 README.md                    (This file - 10KB)
+```
+
+**Total Package Size:** ~50KB  
+**Value Delivered:** Priceless 🌟

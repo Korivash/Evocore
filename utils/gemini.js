@@ -3,6 +3,7 @@ const logger = require('./logger');
 
 let genAI;
 let model;
+let imageModel;
 
 function initialize() {
     if (!process.env.GEMINI_API_KEY) {
@@ -12,9 +13,11 @@ function initialize() {
 
     try {
         genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        // Use Gemini 2.0 Flash - the newest model
+        // Use Gemini 2.0 Flash - the newest text model
         model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-        logger.info('Gemini AI initialized successfully with Gemini 2.0 Flash');
+        // Initialize Imagen 3 for image generation
+        imageModel = genAI.getGenerativeModel({ model: 'imagen-3.0-generate-001' });
+        logger.info('Gemini AI initialized successfully with Gemini 2.0 Flash and Imagen 3');
     } catch (error) {
         logger.error('Error initializing Gemini AI:', error);
     }
@@ -32,6 +35,108 @@ async function generateResponse(prompt, context = '') {
         return response.text();
     } catch (error) {
         logger.error('Error generating AI response:', error);
+        throw error;
+    }
+}
+
+async function generateImage(prompt, aspectRatio = '1:1') {
+    if (!imageModel) {
+        throw new Error('Imagen 3 is not initialized');
+    }
+
+    try {
+        // Map aspect ratios to Imagen 3 format
+        const ratioMap = {
+            '1:1': '1:1',
+            '16:9': '16:9',
+            '9:16': '9:16',
+            '21:9': '16:9' // Fallback to 16:9 for 21:9
+        };
+
+        const mappedRatio = ratioMap[aspectRatio] || '1:1';
+
+        logger.info(`Generating image with prompt: "${prompt}" (${mappedRatio})`);
+
+        // Generate image using Imagen 3
+        const result = await imageModel.generateContent({
+            contents: [{
+                role: 'user',
+                parts: [{
+                    text: prompt
+                }]
+            }],
+            generationConfig: {
+                temperature: 1.0,
+                topP: 0.95,
+                topK: 40,
+                maxOutputTokens: 8192,
+                responseMimeType: 'image/png',
+            },
+            safetySettings: [
+                {
+                    category: 'HARM_CATEGORY_HATE_SPEECH',
+                    threshold: 'BLOCK_MEDIUM_AND_ABOVE'
+                },
+                {
+                    category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                    threshold: 'BLOCK_MEDIUM_AND_ABOVE'
+                },
+                {
+                    category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                    threshold: 'BLOCK_MEDIUM_AND_ABOVE'
+                },
+                {
+                    category: 'HARM_CATEGORY_HARASSMENT',
+                    threshold: 'BLOCK_MEDIUM_AND_ABOVE'
+                }
+            ]
+        });
+
+        const response = await result.response;
+        
+        // Get the image data
+        if (response.candidates && response.candidates[0]) {
+            const candidate = response.candidates[0];
+            
+            // Check if blocked by safety filters
+            if (candidate.finishReason === 'SAFETY') {
+                throw new Error('Image generation blocked by safety filters');
+            }
+
+            // Extract image data from the response
+            if (candidate.content && candidate.content.parts && candidate.content.parts[0]) {
+                const part = candidate.content.parts[0];
+                
+                // If inline data is present
+                if (part.inlineData) {
+                    const base64Data = part.inlineData.data;
+                    return Buffer.from(base64Data, 'base64');
+                }
+                
+                // If file data is present
+                if (part.fileData) {
+                    // Handle file data (would need to fetch from URI)
+                    throw new Error('File data format not yet supported');
+                }
+            }
+        }
+
+        throw new Error('No image data in response');
+
+    } catch (error) {
+        logger.error('Error generating image:', error);
+        
+        // Provide more specific error messages
+        if (error.message.includes('safety')) {
+            throw new Error('Image generation blocked by safety filters. Please try a different prompt.');
+        } else if (error.message.includes('quota') || error.message.includes('429')) {
+            throw new Error('API quota exceeded. Please try again later.');
+        } else if (error.message.includes('API key')) {
+            throw new Error('Invalid API key configuration.');
+        } else if (error.response?.status === 400) {
+            throw new Error('Invalid prompt or parameters. Please try rephrasing your request.');
+        }
+        
         throw error;
     }
 }
@@ -193,11 +298,13 @@ initialize();
 
 module.exports = {
     generateResponse,
+    generateImage,
     analyzeImage,
     moderateContent,
     summarizeText,
     translateText,
     generateCreativeContent,
     chatWithContext,
-    isInitialized: () => model !== null
+    isInitialized: () => model !== null,
+    isImageGenerationAvailable: () => imageModel !== null
 };

@@ -1341,11 +1341,10 @@ SOFTWARE.
 
 ## 📬 Contact
 
-- **Developer:** EvoCore Team
-- **VPS:** 45.141.24.144 (Windows Server)
+- **Developer:** Korivash
 - **Version:** 2.0
 - **Last Updated:** October 2025
-
+- 🤝 **Support Discord** - [Join Here](https://discord.gg/JbQQTbH4hR)
 ---
 
 <div align="center">

@@ -116,6 +116,8 @@ function startHeartbeat() {
 // COMMAND LOADING
 // ============================================================================
 
+log('📂 Loading commands...', colors.cyan, '');
+
 const commandsPath = path.join(__dirname, 'commands');
 if (fs.existsSync(commandsPath)) {
     const commandFolders = fs.readdirSync(commandsPath);
@@ -133,17 +135,20 @@ if (fs.existsSync(commandsPath)) {
                 
                 if ('data' in command && 'execute' in command) {
                     client.commands.set(command.data.name, command);
-                    log(`✓ Loaded command: ${command.data.name}`, colors.green, '');
+                    log(`  ✓ /${command.data.name}`, colors.green, '');
                 } else {
-                    log(`⚠  Command at ${filePath} is missing required "data" or "execute" property`, colors.yellow, '');
+                    log(`  ⚠  Command at ${filePath} is missing required "data" or "execute" property`, colors.yellow, '');
                 }
             } catch (error) {
-                log(`✗ Failed to load command: ${file}`, colors.red, '');
+                log(`  ✗ Failed to load: ${file}`, colors.red, '');
                 logger.error(`Error loading command ${file}:`, error);
             }
         }
     }
 }
+
+log(`✅ Loaded ${client.commands.size} commands`, colors.green, '');
+log('', colors.reset, '');
 
 // ============================================================================
 // INTERACTION HANDLER
@@ -185,8 +190,9 @@ client.on(Events.InteractionCreate, async interaction => {
             setTimeout(() => timestamps.delete(interaction.user.id), cooldownAmount);
 
             // Execute command
-            log(`⚡ ${interaction.user.tag} used /${interaction.commandName} in ${interaction.guild?.name || 'DM'}`, colors.cyan, '');
+            log(`⚡ /${interaction.commandName} by ${interaction.user.tag} in ${interaction.guild?.name || 'DM'} (${interaction.guild?.id || 'DM'})`, colors.yellow, '');
             await command.execute(interaction);
+            log(`  ✓ /${interaction.commandName} completed`, colors.green, '');
             
         } else if (interaction.isButton()) {
             log(`🔘 ${interaction.user.tag} clicked button: ${interaction.customId}`, colors.magenta, '');
@@ -228,14 +234,86 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 // ============================================================================
-// MESSAGE EVENTS
+// MESSAGE EVENTS - XP System & Auto-Moderation
 // ============================================================================
+
+// XP cooldown tracking
+const xpCooldowns = new Map();
 
 client.on(Events.MessageCreate, async message => {
     if (message.author.bot) return;
+    if (!message.guild) return;
     
     try {
-        // Your message handling logic here
+        // Get guild config
+        const guildConfig = await db.getGuildConfig(message.guild.id);
+        
+        // Auto-moderation check (if enabled)
+        if (guildConfig && guildConfig.auto_mod_enabled) {
+            const autoMod = require('./utils/autoMod');
+            await autoMod.checkMessage(message, guildConfig);
+        }
+
+        // XP System - Award XP to active members
+        const userId = message.author.id;
+        const guildId = message.guild.id;
+        const cooldownKey = `${guildId}-${userId}`;
+        
+        // Check cooldown (60 seconds between XP gains)
+        const now = Date.now();
+        const cooldownAmount = 60000; // 60 seconds
+        
+        if (xpCooldowns.has(cooldownKey)) {
+            const expirationTime = xpCooldowns.get(cooldownKey) + cooldownAmount;
+            if (now < expirationTime) {
+                return; // Still on cooldown, don't award XP
+            }
+        }
+        
+        // Set cooldown
+        xpCooldowns.set(cooldownKey, now);
+        setTimeout(() => xpCooldowns.delete(cooldownKey), cooldownAmount);
+        
+        // Award random XP (15-25)
+        const xpGained = Math.floor(Math.random() * 11) + 15;
+        const result = await db.addXP(guildId, userId, xpGained);
+        
+        // Check if user leveled up
+        if (result.levelUp) {
+            log(`🎉 ${message.author.tag} leveled up to ${result.newLevel} in ${message.guild.name}`, colors.magenta, '');
+            
+            // Send level-up announcement in the same channel by default
+            try {
+                // Check if there's a specific level-up channel configured
+                let levelUpChannel = message.channel;
+                
+                if (guildConfig && guildConfig.level_up_channel_id) {
+                    const configuredChannel = message.guild.channels.cache.get(guildConfig.level_up_channel_id);
+                    if (configuredChannel) {
+                        levelUpChannel = configuredChannel;
+                    }
+                }
+                
+                const embed = new EmbedBuilder()
+                    .setColor('#ffd700')
+                    .setTitle('🎉 Level Up!')
+                    .setDescription(`Congratulations ${message.author}! You've reached **Level ${result.newLevel}**!`)
+                    .setThumbnail(message.author.displayAvatarURL({ dynamic: true, size: 256 }))
+                    .addFields(
+                        { name: '📊 New Level', value: `${result.newLevel}`, inline: true },
+                        { name: '🎯 Keep Going!', value: 'Keep chatting to level up more!', inline: true }
+                    )
+                    .setFooter({ text: `${message.author.tag}`, iconURL: message.author.displayAvatarURL() })
+                    .setTimestamp();
+                
+                await levelUpChannel.send({ 
+                    content: `${message.author}`, // Tag the user
+                    embeds: [embed] 
+                });
+            } catch (error) {
+                logger.error('Error sending level-up announcement:', error);
+            }
+        }
         
     } catch (error) {
         logger.error('Error handling message:', error);
@@ -252,13 +330,29 @@ client.on(Events.GuildMemberAdd, async member => {
         log(`👋 ${member.user.tag} joined ${member.guild.name}`, colors.green, '');
 
         const guildConfig = await db.getGuildConfig(member.guild.id);
+        
+        // Auto-role assignment
+        if (guildConfig && guildConfig.auto_role_id) {
+            try {
+                const autoRole = member.guild.roles.cache.get(guildConfig.auto_role_id);
+                if (autoRole) {
+                    await member.roles.add(autoRole);
+                    log(`  ✓ Added auto-role to ${member.user.tag}`, colors.green, '');
+                }
+            } catch (error) {
+                logger.error('Error adding auto-role:', error);
+            }
+        }
+        
+        // Welcome message
         if (!guildConfig || !guildConfig.welcome_channel_id || !guildConfig.welcome_message) return;
 
         const channel = member.guild.channels.cache.get(guildConfig.welcome_channel_id);
         if (channel) {
             const welcomeMessage = guildConfig.welcome_message
                 .replace('{user}', `<@${member.id}>`)
-                .replace('{server}', member.guild.name);
+                .replace('{server}', member.guild.name)
+                .replace('{memberCount}', member.guild.memberCount.toString());
 
             const embed = new EmbedBuilder()
                 .setColor('#00ff00')

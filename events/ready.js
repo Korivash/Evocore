@@ -8,18 +8,23 @@ module.exports = {
         logger.info(`✅ Bot is ready! Logged in as ${client.user.tag}`);
         logger.info(`📊 Serving ${client.guilds.cache.size} guilds`);
 
-        // Set bot status
+        
         const activities = [
-            { name: 'your server | /help', type: ActivityType.Watching },
-            { name: 'for rule breakers | /setup', type: ActivityType.Watching },
             { name: `${client.guilds.cache.size} servers`, type: ActivityType.Watching },
-            { name: 'Blizzard games', type: ActivityType.Playing },
+            { name: 'Run /setup to get started', type: ActivityType.Listening },
+            { name: '/help for commands', type: ActivityType.Listening },
+            { name: 'for rule breakers', type: ActivityType.Watching },
         ];
 
         let currentActivity = 0;
         
         const updateActivity = () => {
-            client.user.setActivity(activities[currentActivity]);
+            const activity = activities[currentActivity];
+            // Update server count dynamically
+            if (activity.name.includes('servers')) {
+                activity.name = `${client.guilds.cache.size} servers`;
+            }
+            client.user.setActivity(activity.name, { type: activity.type });
             currentActivity = (currentActivity + 1) % activities.length;
         };
 

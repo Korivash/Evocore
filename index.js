@@ -1,11 +1,13 @@
-const { Client, GatewayIntentBits, Collection, Events, EmbedBuilder, PermissionFlagsBits, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Events, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 const db = require('./database/database');
-const logger = require('./utils/logger');
+const logger = require('./utils/logging');
+const { initializeDiscordLogging, logErrorToDiscord, logServerEvent, sendDiscordHeartbeat } = require('./utils/logging');
+const { handleEventButton, handleEventSelectMenu } = require('./utils/eventButtonHandler');
 const cron = require('node-cron');
 
 // ANSI Color Codes for beautiful console output
@@ -70,176 +72,11 @@ let heartbeatMessageId = null; // Track the heartbeat message for editing
 const MAX_HEARTBEAT_FAILURES = 3;
 
 // ============================================================================
-// DISCORD LOGGING FUNCTIONS
+// HEARTBEAT SYSTEM
 // ============================================================================
 
-/**
- * Log errors to Discord error channel
- * @param {Error} error - The error object
- * @param {string} context - Additional context about where/when the error occurred
- */
-async function logErrorToDiscord(error, context = '') {
-    if (!ERROR_LOG_CHANNEL_ID) {
-        logger.warn('ERROR_LOG_CHANNEL_ID not configured - skipping Discord error log');
-        return;
-    }
-    
-    try {
-        const channel = await client.channels.fetch(ERROR_LOG_CHANNEL_ID).catch(() => null);
-        if (!channel) {
-            logger.warn(`Error log channel ${ERROR_LOG_CHANNEL_ID} not found or bot lacks access`);
-            return;
-        }
-
-        const errorStack = error.stack || error.message || String(error);
-        const truncatedStack = errorStack.length > 2000 ? errorStack.substring(0, 2000) + '...' : errorStack;
-
-        const embed = new EmbedBuilder()
-            .setColor('#ff0000')
-            .setTitle('🚨 Bot Error')
-            .setDescription(`\`\`\`js\n${truncatedStack}\`\`\``)
-            .addFields(
-                { name: 'Context', value: context.substring(0, 1024) || 'No context provided', inline: false },
-                { name: 'Timestamp', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: false },
-                { name: 'Error Type', value: error.name || 'Unknown', inline: true },
-                { name: 'Guilds Active', value: client.guilds.cache.size.toString(), inline: true }
-            )
-            .setTimestamp()
-            .setFooter({ text: `Bot: ${client.user?.tag || 'Unknown'}` });
-
-        await channel.send({ embeds: [embed] });
-        logger.info('✅ Error logged to Discord channel');
-    } catch (err) {
-        logger.error('❌ Failed to log error to Discord:', err.message);
-    }
-}
-
-/**
- * Log server join/leave events to Discord
- * @param {Guild} guild - The Discord guild object
- * @param {string} type - 'join' or 'leave'
- */
-async function logServerEvent(guild, type) {
-    const channelId = SERVER_LOG_CHANNEL_ID || ERROR_LOG_CHANNEL_ID;
-    if (!channelId) {
-        logger.warn('Neither SERVER_LOG_CHANNEL_ID nor ERROR_LOG_CHANNEL_ID configured - skipping server event log');
-        return;
-    }
-    
-    try {
-        const channel = await client.channels.fetch(channelId).catch(() => null);
-        if (!channel) {
-            logger.warn(`Server log channel ${channelId} not found or bot lacks access`);
-            return;
-        }
-
-        const isJoin = type === 'join';
-        const embed = new EmbedBuilder()
-            .setColor(isJoin ? '#00ff00' : '#ff0000')
-            .setTitle(isJoin ? '🎉 Bot Joined Server' : '👋 Bot Left Server')
-            .setThumbnail(guild.iconURL({ dynamic: true, size: 256 }) || null)
-            .addFields(
-                { name: '📋 Server Name', value: guild.name, inline: true },
-                { name: '🆔 Server ID', value: guild.id, inline: true },
-                { name: '👥 Members', value: guild.memberCount.toString(), inline: true },
-                { name: '👑 Owner', value: `<@${guild.ownerId}>`, inline: true },
-                { name: '📅 Created', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true },
-                { name: '🌐 Total Servers', value: client.guilds.cache.size.toString(), inline: true }
-            )
-            .setTimestamp()
-            .setFooter({ text: `Bot: ${client.user?.tag || 'Unknown'}` });
-
-        // Add server description if available
-        if (guild.description) {
-            embed.addFields({ name: '📝 Description', value: guild.description.substring(0, 1024), inline: false });
-        }
-
-        await channel.send({ embeds: [embed] });
-        logger.info(`✅ Server ${type} event logged to Discord`);
-    } catch (err) {
-        logger.error(`❌ Failed to log server ${type} event:`, err.message);
-    }
-}
-
-/**
- * Send heartbeat status to Discord
- */
-async function sendDiscordHeartbeat() {
-    if (!HEARTBEAT_CHANNEL_ID) {
-        logger.debug('HEARTBEAT_CHANNEL_ID not configured - skipping Discord heartbeat');
-        return;
-    }
-    
-    try {
-        const channel = await client.channels.fetch(HEARTBEAT_CHANNEL_ID).catch(() => null);
-        if (!channel) {
-            logger.warn(`Heartbeat channel ${HEARTBEAT_CHANNEL_ID} not found or bot lacks access`);
-            return;
-        }
-        
-        const uptime = process.uptime();
-        const days = Math.floor(uptime / 86400);
-        const hours = Math.floor((uptime % 86400) / 3600);
-        const minutes = Math.floor((uptime % 3600) / 60);
-        const memUsage = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
-        const memTotal = Math.round(process.memoryUsage().heapTotal / 1024 / 1024);
-        const totalMembers = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
-        
-        // Determine status color based on metrics
-        let statusColor = '#00ff00'; // Green by default
-        if (client.ws.ping > 300 || memUsage > 500) {
-            statusColor = '#ffaa00'; // Orange for warning
-        }
-        if (client.ws.ping > 1000 || memUsage > 1000) {
-            statusColor = '#ff0000'; // Red for critical
-        }
-        
-        let uptimeString = '';
-        if (days > 0) uptimeString += `${days}d `;
-        uptimeString += `${hours}h ${minutes}m`;
-        
-        const embed = new EmbedBuilder()
-            .setColor(statusColor)
-            .setTitle('💓 Bot Heartbeat')
-            .setDescription('**Status:** 🟢 Online and operational')
-            .addFields(
-                { name: '⏱️ Uptime', value: uptimeString, inline: true },
-                { name: '🏓 Ping', value: `${client.ws.ping}ms`, inline: true },
-                { name: '💾 Memory', value: `${memUsage}/${memTotal} MB`, inline: true },
-                { name: '🌐 Servers', value: client.guilds.cache.size.toString(), inline: true },
-                { name: '👥 Total Users', value: totalMembers.toLocaleString(), inline: true },
-                { name: '📊 Commands', value: client.commands.size.toString(), inline: true }
-            )
-            .setTimestamp()
-            .setFooter({ text: `Next heartbeat in 5 minutes` });
-
-        // Try to edit existing heartbeat message, or send a new one
-        if (heartbeatMessageId) {
-            try {
-                const existingMessage = await channel.messages.fetch(heartbeatMessageId);
-                await existingMessage.edit({ embeds: [embed] });
-                logger.debug('Updated existing heartbeat message');
-            } catch (err) {
-                // Message not found or can't edit, send new one
-                const message = await channel.send({ embeds: [embed] });
-                heartbeatMessageId = message.id;
-                logger.debug('Sent new heartbeat message');
-            }
-        } else {
-            const message = await channel.send({ embeds: [embed] });
-            heartbeatMessageId = message.id;
-            logger.debug('Sent initial heartbeat message');
-        }
-    } catch (err) {
-        logger.error('❌ Failed to send Discord heartbeat:', err.message);
-    }
-}
-
-/**
- * Start the heartbeat monitoring system
- */
 function startHeartbeat() {
-    log('💓 Heartbeat system starting...', colors.cyan, '');
+    log('💓 Starting heartbeat system...', colors.cyan, '');
     
     // Console and Discord heartbeat every 5 minutes
     heartbeatInterval = setInterval(async () => {
@@ -254,7 +91,7 @@ function startHeartbeat() {
         heartbeatFailures = 0;
         
         // Send heartbeat to Discord channel
-        await sendDiscordHeartbeat();
+        heartbeatMessageId = await sendDiscordHeartbeat(heartbeatMessageId);
     }, 5 * 60 * 1000); // Every 5 minutes
     
     // Check for missed heartbeats every minute
@@ -353,7 +190,12 @@ client.on(Events.InteractionCreate, async interaction => {
             
         } else if (interaction.isButton()) {
             log(`🔘 ${interaction.user.tag} clicked button: ${interaction.customId}`, colors.magenta, '');
-            // Handle buttons here or in command files
+            
+            // Handle event buttons
+            if (interaction.customId.startsWith('event_')) {
+                await handleEventButton(interaction);
+            }
+            // Add other button handlers here
             
         } else if (interaction.isModalSubmit()) {
             log(`📝 ${interaction.user.tag} submitted modal: ${interaction.customId}`, colors.blue, '');
@@ -361,7 +203,12 @@ client.on(Events.InteractionCreate, async interaction => {
             
         } else if (interaction.isStringSelectMenu()) {
             log(`📋 ${interaction.user.tag} used select menu: ${interaction.customId}`, colors.yellow, '');
-            // Handle select menus here or in command files
+            
+            // Handle event select menus
+            if (interaction.customId.startsWith('event_')) {
+                await handleEventSelectMenu(interaction);
+            }
+            // Add other select menu handlers here
         }
     } catch (error) {
         logger.error('Error handling interaction:', error);
@@ -475,6 +322,9 @@ client.on(Events.GuildDelete, async guild => {
 // ============================================================================
 
 client.once(Events.ClientReady, async () => {
+    // Initialize Discord logging with client
+    initializeDiscordLogging(client);
+    
     log('', colors.cyan, '');
     log('╔════════════════════════════════════════════════════════════╗', colors.cyan, '');
     log('║                                                            ║', colors.cyan, '');

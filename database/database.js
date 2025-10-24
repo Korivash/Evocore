@@ -240,47 +240,33 @@ async function createGuildConfig(guildId) {
         'INSERT INTO guild_config (guild_id) VALUES (?) ON DUPLICATE KEY UPDATE guild_id = guild_id',
         [guildId]
     );
-    return await getGuildConfig(guildId);
 }
 
 async function updateGuildConfig(guildId, updates) {
-    const allowedFields = [
-        'prefix', 'mod_log_channel_id', 'welcome_channel_id', 'goodbye_channel_id',
-        'welcome_message', 'goodbye_message', 'auto_role_id', 'auto_mod_enabled',
-        'anti_spam_enabled', 'anti_link_enabled', 'anti_invite_enabled',
-        'max_warnings', 'mute_role_id', 'blizzard_api_enabled'
-    ];
+    const keys = Object.keys(updates);
+    const values = Object.values(updates);
     
-    const updateFields = Object.keys(updates)
-        .filter(key => allowedFields.includes(key))
-        .map(key => `${key} = ?`)
-        .join(', ');
+    if (keys.length === 0) return;
     
-    if (updateFields.length === 0) return;
-    
-    const values = Object.keys(updates)
-        .filter(key => allowedFields.includes(key))
-        .map(key => updates[key]);
-    
-    values.push(guildId);
+    const setClause = keys.map(key => `${key} = ?`).join(', ');
     
     await pool.query(
-        `UPDATE guild_config SET ${updateFields} WHERE guild_id = ?`,
-        values
+        `UPDATE guild_config SET ${setClause} WHERE guild_id = ?`,
+        [...values, guildId]
     );
 }
 
-async function addModLog(guildId, userId, moderatorId, action, reason, duration = null) {
+async function addModLog(guildId, userId, moderatorId, action, reason = null, duration = null) {
     await pool.query(
         'INSERT INTO mod_logs (guild_id, user_id, moderator_id, action, reason, duration) VALUES (?, ?, ?, ?, ?, ?)',
         [guildId, userId, moderatorId, action, reason, duration]
     );
 }
 
-async function getModLogs(guildId, userId) {
+async function getModLogs(guildId, userId, limit = 10) {
     const [rows] = await pool.query(
-        'SELECT * FROM mod_logs WHERE guild_id = ? AND user_id = ? ORDER BY created_at DESC',
-        [guildId, userId]
+        'SELECT * FROM mod_logs WHERE guild_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT ?',
+        [guildId, userId, limit]
     );
     return rows;
 }
@@ -325,8 +311,8 @@ async function clearWarnings(guildId, userId) {
 
 async function addTempBan(guildId, userId, expiresAt, reason) {
     await pool.query(
-        'INSERT INTO temp_bans (guild_id, user_id, expires_at, reason) VALUES (?, ?, ?, ?)',
-        [guildId, userId, expiresAt, reason]
+        'INSERT INTO temp_bans (guild_id, user_id, expires_at, reason) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE expires_at = ?, reason = ?',
+        [guildId, userId, expiresAt, reason, expiresAt, reason]
     );
 }
 
@@ -351,14 +337,14 @@ async function logCommand(guildId, userId, commandName) {
     );
 }
 
-async function getCommandStats(guildId) {
+async function getCommandStats(guildId, days = 30) {
     const [rows] = await pool.query(
-        `SELECT command_name, COUNT(*) as count 
+        `SELECT command_name, COUNT(*) as uses 
          FROM command_stats 
-         WHERE guild_id = ? 
+         WHERE guild_id = ? AND used_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
          GROUP BY command_name 
-         ORDER BY count DESC`,
-        [guildId]
+         ORDER BY uses DESC`,
+        [guildId, days]
     );
     return rows;
 }
@@ -370,10 +356,12 @@ async function addAutoModViolation(guildId, userId, violationType, content) {
     );
 }
 
-async function getAutoModViolations(guildId, userId) {
+async function getAutoModViolations(guildId, userId, days = 7) {
     const [rows] = await pool.query(
-        'SELECT * FROM automod_violations WHERE guild_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 20',
-        [guildId, userId]
+        `SELECT * FROM automod_violations 
+         WHERE guild_id = ? AND user_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+         ORDER BY created_at DESC`,
+        [guildId, userId, days]
     );
     return rows;
 }
@@ -383,26 +371,29 @@ async function getCachedBlizzardData(key) {
         'SELECT cache_data FROM blizzard_cache WHERE cache_key = ? AND expires_at > NOW()',
         [key]
     );
-    return rows[0] ? rows[0].cache_data : null;
+    return rows[0]?.cache_data || null;
 }
 
 async function setCachedBlizzardData(key, data, ttlMinutes = 60) {
-    const expiresAt = new Date(Date.now() + ttlMinutes * 60000);
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+    
     await pool.query(
-        'INSERT INTO blizzard_cache (cache_key, cache_data, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE cache_data = ?, expires_at = ?',
+        `INSERT INTO blizzard_cache (cache_key, cache_data, expires_at) 
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE cache_data = ?, expires_at = ?`,
         [key, JSON.stringify(data), expiresAt, JSON.stringify(data), expiresAt]
     );
 }
 
-async function addXP(guildId, userId, amount) {
+async function addXP(guildId, userId, xpAmount) {
     await pool.query(
-        `INSERT INTO user_levels (guild_id, user_id, xp, messages_sent, last_xp_at) 
-         VALUES (?, ?, ?, 1, NOW()) 
+        `INSERT INTO user_levels (guild_id, user_id, xp, messages_sent, last_xp_at)
+         VALUES (?, ?, ?, 1, NOW())
          ON DUPLICATE KEY UPDATE 
-            xp = xp + ?, 
-            messages_sent = messages_sent + 1, 
+            xp = xp + ?,
+            messages_sent = messages_sent + 1,
             last_xp_at = NOW()`,
-        [guildId, userId, amount, amount]
+        [guildId, userId, xpAmount, xpAmount]
     );
     
     const [rows] = await pool.query(
@@ -410,18 +401,20 @@ async function addXP(guildId, userId, amount) {
         [guildId, userId]
     );
     
-    if (rows[0]) {
-        const newLevel = Math.floor(rows[0].xp / 100);
-        if (newLevel > rows[0].level) {
+    if (rows.length > 0) {
+        const { xp, level } = rows[0];
+        const newLevel = Math.floor(Math.sqrt(xp / 100));
+        
+        if (newLevel > level) {
             await pool.query(
                 'UPDATE user_levels SET level = ? WHERE guild_id = ? AND user_id = ?',
                 [newLevel, guildId, userId]
             );
-            return { leveledUp: true, newLevel };
+            return { levelUp: true, newLevel };
         }
     }
     
-    return { leveledUp: false };
+    return { levelUp: false };
 }
 
 async function getUserLevel(guildId, userId) {
@@ -552,6 +545,15 @@ async function getEventParticipants(eventId) {
     return rows;
 }
 
+// NEW: Get a single event participant
+async function getEventParticipant(eventId, userId) {
+    const [rows] = await pool.query(
+        'SELECT * FROM event_participants WHERE event_id = ? AND user_id = ?',
+        [eventId, userId]
+    );
+    return rows[0] || null;
+}
+
 async function getParticipantCount(eventId, status = null) {
     let query = 'SELECT COUNT(*) as count FROM event_participants WHERE event_id = ?';
     const params = [eventId];
@@ -565,6 +567,37 @@ async function getParticipantCount(eventId, status = null) {
     return rows[0].count;
 }
 
+// UPDATED: Renamed from updateParticipantClass for clarity
+async function updateEventParticipantClass(eventId, userId, wowClass) {
+    await pool.query(
+        `INSERT INTO event_participants (event_id, user_id, wow_class)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE wow_class = ?, updated_at = CURRENT_TIMESTAMP`,
+        [eventId, userId, wowClass, wowClass]
+    );
+}
+
+// NEW: Separate function to update role only
+async function updateEventParticipantRole(eventId, userId, wowRole) {
+    await pool.query(
+        `INSERT INTO event_participants (event_id, user_id, wow_role)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE wow_role = ?, updated_at = CURRENT_TIMESTAMP`,
+        [eventId, userId, wowRole, wowRole]
+    );
+}
+
+// NEW: Update participant status (for RSVP buttons)
+async function updateEventParticipant(eventId, userId, status) {
+    await pool.query(
+        `INSERT INTO event_participants (event_id, user_id, status)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE status = ?, updated_at = CURRENT_TIMESTAMP`,
+        [eventId, userId, status, status]
+    );
+}
+
+// KEPT: Original function for updating both class and role at once
 async function updateParticipantClass(eventId, userId, wowClass, wowRole) {
     await pool.query(
         'UPDATE event_participants SET wow_class = ?, wow_role = ?, updated_at = CURRENT_TIMESTAMP WHERE event_id = ? AND user_id = ?',
@@ -651,8 +684,12 @@ module.exports = {
     addEventParticipant,
     removeEventParticipant,
     getEventParticipants,
+    getEventParticipant,        // NEW
     getParticipantCount,
     updateParticipantClass,
+    updateEventParticipant,     // NEW
+    updateEventParticipantClass,// NEW
+    updateEventParticipantRole, // NEW
     updateParticipantNotes,
     getUpcomingEvents,
     cleanupOldData,

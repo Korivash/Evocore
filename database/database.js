@@ -1,5 +1,5 @@
 const mysql = require('mysql2/promise');
-const logger = require('../utils/logger');
+const logger = require('../utils/logging');
 
 let pool;
 

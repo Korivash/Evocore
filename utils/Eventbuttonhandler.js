@@ -1,7 +1,7 @@
 const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
 const db = require('../database/database');
 const { WOW_CLASSES, WOW_ROLES, RSVP_STATUS, createEventEmbed } = require('../commands/events/event');
-const logger = require('./logger');
+const logger = require('./logging');
 
 /**
  * Handle all event-related button interactions

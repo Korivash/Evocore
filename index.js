@@ -568,14 +568,27 @@ process.on('SIGTERM', async () => {
 });
 
 // ============================================================================
-// LOGIN
+// DATABASE INITIALIZATION & LOGIN
 // ============================================================================
 
-log('🔐 Connecting to Discord...', colors.cyan, '');
-client.login(process.env.DISCORD_TOKEN).catch(error => {
-    log('❌ Failed to login to Discord!', colors.red, '');
-    logger.error('Failed to login:', error);
-    process.exit(1);
-});
+(async () => {
+    try {
+        // Initialize database first
+        log('💾 Initializing database...', colors.cyan, '');
+        if (typeof db.init === 'function') {
+            await db.init();
+            log('✅ Database initialized successfully', colors.green, '');
+        }
+        
+        // Then login to Discord
+        log('🔐 Connecting to Discord...', colors.cyan, '');
+        await client.login(process.env.DISCORD_TOKEN);
+    } catch (error) {
+        log('❌ Failed to start bot!', colors.red, '');
+        logger.error('Startup error:', error);
+        await logErrorToDiscord(error, 'Critical: Bot failed to start');
+        process.exit(1);
+    }
+})();
 
 module.exports = client;

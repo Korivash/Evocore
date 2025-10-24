@@ -25,28 +25,46 @@ module.exports = {
                 .setDescription('View current XP system settings')),
 
     async execute(interaction) {
-        await interaction.deferReply();
+        try {
+            // IMMEDIATELY defer the reply - before any database calls or logic
+            await interaction.deferReply();
 
-        const subcommand = interaction.options.getSubcommand();
-        const config = await db.getGuildConfig(interaction.guild.id);
+            // Now it's safe to do database queries
+            const subcommand = interaction.options.getSubcommand();
+            const config = await db.getGuildConfig(interaction.guild.id);
 
-        if (!config) {
-            return interaction.editReply({
-                content: '❌ Please run `/setup` first to initialize the bot configuration.',
-                ephemeral: true
-            });
-        }
+            if (!config) {
+                return interaction.editReply({
+                    content: '❌ Please run `/setup` first to initialize the bot configuration.'
+                });
+            }
 
-        switch (subcommand) {
-            case 'channel':
-                await handleSetChannel(interaction, config);
-                break;
-            case 'disable':
-                await handleDisable(interaction, config);
-                break;
-            case 'view':
-                await handleView(interaction, config);
-                break;
+            switch (subcommand) {
+                case 'channel':
+                    await handleSetChannel(interaction, config);
+                    break;
+                case 'disable':
+                    await handleDisable(interaction, config);
+                    break;
+                case 'view':
+                    await handleView(interaction, config);
+                    break;
+            }
+        } catch (error) {
+            console.error('Error in exp command:', error);
+            
+            // Safe error response
+            const errorContent = { content: '❌ An error occurred while processing your command.' };
+            
+            try {
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.editReply(errorContent);
+                } else {
+                    await interaction.reply(errorContent);
+                }
+            } catch (replyError) {
+                console.error('Error sending error message:', replyError);
+            }
         }
     }
 };
@@ -57,8 +75,7 @@ async function handleSetChannel(interaction, config) {
     // Verify bot has permission to send messages in the channel
     if (!channel.permissionsFor(interaction.guild.members.me).has(['SendMessages', 'EmbedLinks'])) {
         return interaction.editReply({
-            content: '❌ I don\'t have permission to send messages in that channel!',
-            ephemeral: true
+            content: '❌ I don\'t have permission to send messages in that channel!'
         });
     }
 

@@ -645,9 +645,14 @@ async function close() {
     }
 }
 
-init();
+
+// Only auto-init if not in deployment mode
+if (!process.env.SKIP_DB_INIT && process.env.NODE_ENV !== 'deployment') {
+    init();
+}
 
 module.exports = {
+    init,  // Export init so it can be called manually
     getGuildConfig,
     createGuildConfig,
     updateGuildConfig,
@@ -684,12 +689,12 @@ module.exports = {
     addEventParticipant,
     removeEventParticipant,
     getEventParticipants,
-    getEventParticipant,        // NEW
+    getEventParticipant,
     getParticipantCount,
     updateParticipantClass,
-    updateEventParticipant,     // NEW
-    updateEventParticipantClass,// NEW
-    updateEventParticipantRole, // NEW
+    updateEventParticipant,
+    updateEventParticipantClass,
+    updateEventParticipantRole,
     updateParticipantNotes,
     getUpcomingEvents,
     cleanupOldData,

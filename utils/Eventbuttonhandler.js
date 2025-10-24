@@ -64,8 +64,18 @@ async function handleEventButton(interaction) {
  * Handle RSVP button clicks
  */
 async function handleRSVP(interaction, event, status) {
+    // Map button action to database status value
+    const statusMap = {
+        'accept': 'accepted',
+        'decline': 'declined',
+        'tentative': 'tentative',
+        'late': 'late'
+    };
+    
+    const dbStatus = statusMap[status] || status;
+    
     // Check if event is full (for accepted status)
-    if (status === 'accepted' && event.max_participants > 0) {
+    if (dbStatus === 'accepted' && event.max_participants > 0) {
         const participants = await db.getEventParticipants(event.id);
         const acceptedCount = participants.filter(p => p.status === 'accepted').length;
         
@@ -81,15 +91,15 @@ async function handleRSVP(interaction, event, status) {
         }
     }
     
-    // Update or create participant record
-    await db.updateEventParticipant(event.id, interaction.user.id, status);
+    // Update or create participant record with the correct database status
+    await db.updateEventParticipant(event.id, interaction.user.id, dbStatus);
     
     // Update the event embed message
     await updateEventMessage(interaction, event);
     
-    // Send confirmation
-    const statusEmoji = RSVP_STATUS[status].emoji;
-    const statusName = RSVP_STATUS[status].name;
+    // Send confirmation (use dbStatus for the emoji/name lookup)
+    const statusEmoji = RSVP_STATUS[dbStatus].emoji;
+    const statusName = RSVP_STATUS[dbStatus].name;
     
     await interaction.reply({ 
         content: `${statusEmoji} You are now marked as **${statusName}** for **${event.title}**!`,

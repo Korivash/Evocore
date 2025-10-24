@@ -1,234 +1,164 @@
-const { REST } = require('@discordjs/rest');
-const { Routes } = require('discord-api-types/v10');
+const { REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
+// Prevent database initialization during deployment
+process.env.SKIP_DB_INIT = 'true';
+
+// ANSI Color Codes
+const colors = {
+    reset: '\x1b[0m',
+    green: '\x1b[32m',
+    yellow: '\x1b[33m',
+    cyan: '\x1b[36m',
+    red: '\x1b[31m',
+    bright: '\x1b[1m',
+};
+
+// Validation
+if (!process.env.DISCORD_TOKEN) {
+    console.error(`${colors.red}❌ Error: DISCORD_TOKEN not found in .env file${colors.reset}`);
+    process.exit(1);
+}
+
+if (!process.env.CLIENT_ID) {
+    console.error(`${colors.red}❌ Error: CLIENT_ID not found in .env file${colors.reset}`);
+    process.exit(1);
+}
+
+if (!process.env.GUILD_ID) {
+    console.error(`${colors.red}❌ Error: GUILD_ID not found in .env file${colors.reset}`);
+    console.error(`${colors.yellow}💡 Add your test server's ID to .env as: GUILD_ID=your_server_id${colors.reset}`);
+    console.error(`${colors.yellow}   You can get this by right-clicking your server and selecting "Copy Server ID"${colors.reset}`);
+    console.error(`${colors.yellow}   (Developer Mode must be enabled in Discord settings)${colors.reset}`);
+    process.exit(1);
+}
+
 const commands = [];
 const commandsPath = path.join(__dirname, 'commands');
 
+console.log(`${colors.cyan}${colors.bright}╔════════════════════════════════════════════════╗${colors.reset}`);
+console.log(`${colors.cyan}${colors.bright}║     GUILD COMMAND DEPLOYMENT (INSTANT)         ║${colors.reset}`);
+console.log(`${colors.cyan}${colors.bright}╚════════════════════════════════════════════════╝${colors.reset}\n`);
+
+console.log(`${colors.cyan}🔧 Loading commands for deployment...${colors.reset}`);
+
 // Load all command files
-function loadCommands(dir) {
-    const items = fs.readdirSync(dir);
-    
-    for (const item of items) {
-        const itemPath = path.join(dir, item);
-        const stat = fs.statSync(itemPath);
-        
-        if (stat.isDirectory()) {
-            loadCommands(itemPath);
-        } else if (item.endsWith('.js')) {
+if (fs.existsSync(commandsPath)) {
+    const commandFolders = fs.readdirSync(commandsPath);
+
+    for (const folder of commandFolders) {
+        const folderPath = path.join(commandsPath, folder);
+        if (!fs.statSync(folderPath).isDirectory()) continue;
+
+        const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith('.js'));
+
+        for (const file of commandFiles) {
+            const filePath = path.join(folderPath, file);
             try {
-                const command = require(itemPath);
-                if ('data' in command) {
+                const command = require(filePath);
+                
+                if ('data' in command && 'execute' in command) {
                     commands.push(command.data.toJSON());
-                    console.log(`✅ Loaded: ${command.data.name}`);
+                    console.log(`${colors.green}  ✓ Loaded: ${command.data.name}${colors.reset}`);
+                } else {
+                    console.log(`${colors.yellow}  ⚠ Skipped ${file}: missing "data" or "execute"${colors.reset}`);
                 }
             } catch (error) {
-                console.error(`❌ Error loading ${item}:`, error.message);
+                console.log(`${colors.red}  ✗ Failed to load ${file}:${colors.reset}`, error.message);
             }
         }
     }
 }
 
-// Main deployment function with timeout handling
-async function deployCommands() {
-    if (!process.env.DISCORD_TOKEN) {
-        console.error('❌ Error: DISCORD_TOKEN not found in .env file');
+console.log(`\n${colors.cyan}📊 Total commands loaded: ${colors.bright}${commands.length}${colors.reset}`);
+
+// Construct REST module with timeout
+const rest = new REST({ timeout: 15000 }).setToken(process.env.DISCORD_TOKEN);
+
+// Deploy commands
+(async () => {
+    const startTime = Date.now();
+    
+    // Safety timeout - force exit after 30 seconds
+    const timeoutId = setTimeout(() => {
+        console.log(`\n${colors.yellow}⏱️  Deployment timeout (30s) reached.${colors.reset}`);
+        console.log(`${colors.yellow}This usually indicates a network connectivity issue.${colors.reset}\n`);
+        console.log(`${colors.red}Troubleshooting steps:${colors.reset}`);
+        console.log(`  1. Check your internet connection`);
+        console.log(`  2. Verify Discord API status at https://discordstatus.com`);
+        console.log(`  3. Check if your firewall is blocking Discord API`);
+        console.log(`  4. Try running the command again\n`);
         process.exit(1);
-    }
-
-    console.log('🔄 Loading commands...\n');
-    loadCommands(commandsPath);
-    console.log(`\n📊 Total commands loaded: ${commands.length}\n`);
-
-    // Validate commands before deployment
-    console.log('🔍 Validating command data...');
-    for (const command of commands) {
-        if (!command.name || !command.description) {
-            console.error(`❌ Invalid command found: ${JSON.stringify(command).substring(0, 100)}`);
-            process.exit(1);
-        }
-        // Check for oversized options
-        if (command.options && JSON.stringify(command.options).length > 4000) {
-            console.warn(`⚠️  Warning: ${command.name} has very large options data`);
-        }
-    }
-    console.log('✅ All commands validated\n');
-
-    const rest = new REST({ 
-        version: '10',
-        timeout: 60000 // 60 second timeout
-    }).setToken(process.env.DISCORD_TOKEN);
+    }, 30000);
 
     try {
-        const clientId = Buffer.from(process.env.DISCORD_TOKEN.split('.')[0], 'base64').toString();
-        console.log(`📝 Client ID: ${clientId}\n`);
-        
-        // Step 1: Clear existing commands with timeout
-        console.log('🗑️  Clearing all existing global commands...');
-        await Promise.race([
-            rest.put(Routes.applicationCommands(clientId), { body: [] }),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Timeout after 30 seconds')), 30000)
-            )
-        ]);
-        console.log('✅ Successfully cleared all global commands\n');
+        console.log(`\n${colors.cyan}🚀 Deploying to Guild ID: ${colors.bright}${process.env.GUILD_ID}${colors.reset}`);
+        console.log(`${colors.cyan}⏳ Registering ${commands.length} commands...${colors.reset}\n`);
 
-        // Step 2: Register new commands with timeout and progress
-        console.log('📤 Registering commands globally...');
-        console.log('⏳ This may take 30-60 seconds, please wait...\n');
-        
-        const startTime = Date.now();
-        const data = await Promise.race([
-            rest.put(Routes.applicationCommands(clientId), { body: commands }),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Timeout after 90 seconds')), 90000)
-            )
-        ]);
+        // Register commands to specific guild (instant updates!)
+        const data = await rest.put(
+            Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+            { body: commands },
+        );
+
         const endTime = Date.now();
+        const duration = ((endTime - startTime) / 1000).toFixed(2);
 
-        console.log(`✅ Successfully registered ${data.length} global slash commands!`);
-        console.log(`⏱️  Registration took ${Math.round((endTime - startTime) / 1000)} seconds\n`);
+        console.log(`${colors.green}${colors.bright}✅ SUCCESS!${colors.reset}`);
+        console.log(`${colors.green}Successfully deployed ${data.length} commands in ${duration}s${colors.reset}`);
+        console.log(`${colors.yellow}⚡ Commands are available IMMEDIATELY in your guild!${colors.reset}\n`);
         
-        console.log('📋 Registered commands:');
+        // List deployed commands
+        console.log(`${colors.cyan}📋 Deployed Commands:${colors.reset}`);
         data.forEach((cmd, index) => {
-            console.log(`   ${index + 1}. /${cmd.name} - ${cmd.description}`);
+            console.log(`   ${(index + 1).toString().padStart(2, '0')}. /${cmd.name.padEnd(20)} ${cmd.description ? `- ${cmd.description}` : ''}`);
         });
-
-        console.log('\n🎉 Command deployment complete!');
-        console.log('⏱️  Commands may take up to 1 hour to appear in all servers');
-        console.log('💡 Tip: Use guild commands for instant updates during development\n');
+        
+        console.log(`\n${colors.green}🎉 Deployment complete! Exiting...${colors.reset}\n`);
+        clearTimeout(timeoutId);
+        process.exit(0);
         
     } catch (error) {
-        console.error('\n❌ Error deploying commands:', error.message);
+        clearTimeout(timeoutId);
+        const endTime = Date.now();
+        const duration = ((endTime - startTime) / 1000).toFixed(2);
         
-        if (error.message.includes('Timeout')) {
-            console.error('\n⚠️  The request timed out. This could mean:');
-            console.error('   1. Discord API is slow/down');
-            console.error('   2. Your internet connection is unstable');
-            console.error('   3. One of your commands has invalid data');
-            console.error('\n💡 Try deploying to a test guild instead:');
-            console.error('   node deploy-commands.js --guild YOUR_GUILD_ID');
-        } else if (error.code === 50001) {
-            console.error('\n⚠️  Missing Access: Make sure your bot has the applications.commands scope');
-        } else if (error.code === 401) {
-            console.error('\n⚠️  Invalid Token: Check your DISCORD_TOKEN in .env file');
-        } else if (error.rawError?.message) {
-            console.error('\n⚠️  Error details:', error.rawError.message);
-        }
-        
-        console.error('\n📝 Debug info:');
-        console.error(`   Commands to deploy: ${commands.length}`);
-        console.error(`   Total size: ${JSON.stringify(commands).length} bytes`);
-        
-        process.exit(1);
-    }
-}
-
-// Guild-specific deployment (faster, for testing)
-async function deployToGuild(guildId) {
-    if (!process.env.DISCORD_TOKEN) {
-        console.error('❌ Error: DISCORD_TOKEN not found in .env file');
-        process.exit(1);
-    }
-
-    console.log('🔄 Loading commands...\n');
-    loadCommands(commandsPath);
-    console.log(`\n📊 Total commands loaded: ${commands.length}\n`);
-
-    const rest = new REST({ 
-        version: '10',
-        timeout: 60000 
-    }).setToken(process.env.DISCORD_TOKEN);
-
-    try {
-        const clientId = Buffer.from(process.env.DISCORD_TOKEN.split('.')[0], 'base64').toString();
-        
-        console.log(`🗑️  Clearing existing commands in guild ${guildId}...`);
-        await Promise.race([
-            rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: [] }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 30000))
-        ]);
-        console.log('✅ Successfully cleared guild commands\n');
-
-        console.log(`📤 Registering commands to guild ${guildId}...`);
-        const data = await Promise.race([
-            rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 60000))
-        ]);
-
-        console.log(`✅ Successfully registered ${data.length} guild commands!`);
-        console.log('⚡ Commands are available immediately in the guild\n');
-        
-    } catch (error) {
-        console.error('❌ Error deploying commands:', error.message);
+        console.error(`\n${colors.red}❌ Error deploying commands (after ${duration}s):${colors.reset}`, error.message);
         
         if (error.code === 50001) {
-            console.error('\n⚠️  Bot is not in this guild or lacks permissions');
+            console.error(`\n${colors.red}⚠️  Missing Access${colors.reset}`);
+            console.error(`   • The bot is missing required permissions`);
+            console.error(`   • Or CLIENT_ID is incorrect`);
+        } else if (error.code === 10002) {
+            console.error(`\n${colors.red}⚠️  Unknown Application${colors.reset}`);
+            console.error(`   • Check that CLIENT_ID in .env is correct`);
+        } else if (error.code === 50001) {
+            console.error(`\n${colors.red}⚠️  Unknown Guild${colors.reset}`);
+            console.error(`   • Check that GUILD_ID in .env is correct`);
+            console.error(`   • Make sure the bot is in this server`);
+        } else if (error.code === 'TOKEN_INVALID') {
+            console.error(`\n${colors.red}⚠️  Invalid Token${colors.reset}`);
+            console.error(`   • Check that DISCORD_TOKEN in .env is correct`);
+        } else if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
+            console.error(`\n${colors.red}⚠️  Network Error${colors.reset}`);
+            console.error(`   • Connection to Discord API timed out or was reset`);
+            console.error(`   • Check your internet connection`);
+            console.error(`   • Check Discord API status at https://discordstatus.com`);
+            console.error(`   • Your firewall might be blocking the connection`);
+        } else if (error.name === 'AbortError') {
+            console.error(`\n${colors.red}⚠️  Request Timeout${colors.reset}`);
+            console.error(`   • The request took longer than 15 seconds`);
+            console.error(`   • This is likely a network issue`);
+            console.error(`   • Try running the command again`);
+        } else {
+            console.error(`\n${colors.red}⚠️  Unexpected Error${colors.reset}`);
+            console.error(`   • Error code: ${error.code || 'N/A'}`);
+            console.error(`   • Error name: ${error.name || 'N/A'}`);
         }
         
+        console.error(`\n${colors.yellow}💡 Full error details:${colors.reset}`, error);
         process.exit(1);
     }
-}
-
-// CLI interface
-const args = process.argv.slice(2);
-
-if (args.includes('--help') || args.includes('-h')) {
-    console.log(`
-📚 Discord Bot Command Deployment Tool
-
-Usage:
-  node deploy-commands.js              Deploy commands globally
-  node deploy-commands.js --guild ID   Deploy to specific guild (faster for testing)
-  node deploy-commands.js --clear      Clear all global commands
-  node deploy-commands.js --help       Show this help message
-
-Examples:
-  node deploy-commands.js
-  node deploy-commands.js --guild 123456789012345678
-  node deploy-commands.js --clear
-
-Notes:
-  - Global deployment takes up to 1 hour to propagate
-  - Guild deployment is instant (recommended for testing)
-  - Requires DISCORD_TOKEN in .env file
-  - Bot must have applications.commands scope
-
-Troubleshooting:
-  If deployment times out:
-  1. Try guild deployment instead (much faster)
-  2. Check your internet connection
-  3. Verify Discord API status
-  4. Check for invalid command data
-    `);
-    process.exit(0);
-}
-
-if (args.includes('--clear')) {
-    (async () => {
-        const rest = new REST({ version: '10', timeout: 30000 }).setToken(process.env.DISCORD_TOKEN);
-        const clientId = Buffer.from(process.env.DISCORD_TOKEN.split('.')[0], 'base64').toString();
-        
-        console.log('🗑️  Clearing all global commands...');
-        await rest.put(Routes.applicationCommands(clientId), { body: [] });
-        console.log('✅ All global commands cleared\n');
-    })().catch(error => {
-        console.error('❌ Error:', error.message);
-        process.exit(1);
-    });
-} else if (args.includes('--guild')) {
-    const guildIndex = args.indexOf('--guild');
-    const guildId = args[guildIndex + 1];
-    
-    if (!guildId) {
-        console.error('❌ Error: Please provide a guild ID');
-        console.log('Usage: node deploy-commands.js --guild YOUR_GUILD_ID');
-        process.exit(1);
-    }
-    
-    deployToGuild(guildId);
-} else {
-    deployCommands();
-}
+})();

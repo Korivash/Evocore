@@ -1,5 +1,5 @@
 const db = require('../database/database');
-const logger = require('./logger');
+const logger = require('./logging');
 
 // Bad words list (expand as needed - these are examples)
 const badWords = [

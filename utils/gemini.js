@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios = require('axios');
-const logger = require('./logger');
+const logger = require('./logging');
 
 let genAI;
 let model;

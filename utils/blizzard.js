@@ -1,6 +1,6 @@
 const axios = require('axios');
 const db = require('../database/database');
-const logger = require('./logger');
+const logger = require('./logging');
 
 let cachedToken = null;
 let tokenExpiry = 0;

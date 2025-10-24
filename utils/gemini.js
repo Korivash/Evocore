@@ -5,6 +5,8 @@ const logger = require('./logging');
 let genAI;
 let model;
 let imageModel;
+let initialized = false;
+let usageResetInterval = null;
 
 // Track API usage for intelligent fallback
 const apiUsage = {
@@ -13,6 +15,9 @@ const apiUsage = {
 };
 
 function initialize() {
+    // Only initialize once
+    if (initialized) return;
+    
     if (!process.env.GEMINI_API_KEY) {
         logger.warn('Gemini API key not found, some AI features will be limited');
     } else {
@@ -27,24 +32,39 @@ function initialize() {
             logger.error('Error initializing Gemini AI:', error);
         }
     }
+    
+    // Start usage reset interval ONLY if not in deployment mode
+    if (!process.env.SKIP_DB_INIT) {
+        startUsageResetInterval();
+    }
+    
+    initialized = true;
 }
 
-// Reset daily usage counters
-setInterval(() => {
-    const now = Date.now();
-    if (now - apiUsage.gemini.lastReset > 86400000) { // 24 hours
-        apiUsage.gemini.count = 0;
-        apiUsage.gemini.lastReset = now;
-        logger.info('Gemini usage counter reset');
-    }
-    if (now - apiUsage.huggingface.lastReset > 2592000000) { // 30 days
-        apiUsage.huggingface.count = 0;
-        apiUsage.huggingface.lastReset = now;
-        logger.info('Hugging Face usage counter reset');
-    }
-}, 3600000); // Check every hour
+function startUsageResetInterval() {
+    // Prevent multiple intervals
+    if (usageResetInterval) return;
+    
+    // Reset daily usage counters
+    usageResetInterval = setInterval(() => {
+        const now = Date.now();
+        if (now - apiUsage.gemini.lastReset > 86400000) { // 24 hours
+            apiUsage.gemini.count = 0;
+            apiUsage.gemini.lastReset = now;
+            logger.info('Gemini usage counter reset');
+        }
+        if (now - apiUsage.huggingface.lastReset > 2592000000) { // 30 days
+            apiUsage.huggingface.count = 0;
+            apiUsage.huggingface.lastReset = now;
+            logger.info('Hugging Face usage counter reset');
+        }
+    }, 3600000); // Check every hour
+}
 
 async function generateResponse(prompt, context = '') {
+    // Lazy initialization
+    if (!initialized) initialize();
+    
     if (!model) {
         throw new Error('Gemini AI is not initialized. Please configure GEMINI_API_KEY.');
     }
@@ -61,6 +81,9 @@ async function generateResponse(prompt, context = '') {
 }
 
 async function generateImage(prompt, aspectRatio = '1:1') {
+    // Lazy initialization
+    if (!initialized) initialize();
+    
     // Try providers in order of preference
     const providers = [
         { name: 'Gemini Imagen 3', func: generateImageGemini, needsKey: true },
@@ -226,30 +249,11 @@ async function generateImageHuggingFace(prompt, aspectRatio = '1:1') {
         throw new Error('Hugging Face API key not configured');
     }
 
-    const dimensions = {
-        '1:1': { width: 512, height: 512 },
-        '16:9': { width: 768, height: 432 },
-        '9:16': { width: 432, height: 768 },
-        '21:9': { width: 896, height: 384 }
-    };
+    logger.info(`Generating with Hugging Face: "${prompt.substring(0, 50)}..."`);
 
-    const { width, height } = dimensions[aspectRatio] || dimensions['1:1'];
-
-    logger.info(`Generating with Hugging Face: "${prompt.substring(0, 50)}..." (${width}x${height})`);
-
-    // Using Stable Diffusion XL on Hugging Face
     const response = await axios.post(
-        'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0',
-        {
-            inputs: prompt,
-            parameters: {
-                negative_prompt: 'nsfw, nude, explicit, violence, gore, offensive, low quality, blurry',
-                width: width,
-                height: height,
-                num_inference_steps: 25,
-                guidance_scale: 7.5
-            }
-        },
+        'https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev',
+        { inputs: prompt },
         {
             headers: {
                 'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
@@ -260,14 +264,6 @@ async function generateImageHuggingFace(prompt, aspectRatio = '1:1') {
         }
     );
 
-    // Check if response is an error
-    if (response.headers['content-type']?.includes('application/json')) {
-        const errorData = JSON.parse(Buffer.from(response.data).toString());
-        if (errorData.error) {
-            throw new Error(errorData.error);
-        }
-    }
-
     if (!response.data || response.data.length === 0) {
         throw new Error('Empty response from Hugging Face');
     }
@@ -275,15 +271,25 @@ async function generateImageHuggingFace(prompt, aspectRatio = '1:1') {
     return Buffer.from(response.data);
 }
 
-async function analyzeImage(imageData, prompt) {
-    if (!genAI) {
+async function analyzeImage(imageUrl) {
+    // Lazy initialization
+    if (!initialized) initialize();
+    
+    if (!model) {
         throw new Error('Gemini AI is not initialized');
     }
 
     try {
-        // Gemini 2.0 Flash supports vision natively
-        const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-        const result = await visionModel.generateContent([prompt, imageData]);
+        const result = await model.generateContent([
+            {
+                inlineData: {
+                    mimeType: 'image/jpeg',
+                    data: imageUrl
+                }
+            },
+            { text: 'Describe this image in detail.' }
+        ]);
+        
         const response = await result.response;
         return response.text();
     } catch (error) {
@@ -293,6 +299,9 @@ async function analyzeImage(imageData, prompt) {
 }
 
 async function moderateContent(content) {
+    // Lazy initialization
+    if (!initialized) initialize();
+    
     if (!model) {
         throw new Error('Gemini AI is not initialized');
     }
@@ -335,6 +344,9 @@ async function moderateContent(content) {
 }
 
 async function summarizeText(text, maxLength = 200) {
+    // Lazy initialization
+    if (!initialized) initialize();
+    
     if (!model) {
         throw new Error('Gemini AI is not initialized');
     }
@@ -351,6 +363,9 @@ async function summarizeText(text, maxLength = 200) {
 }
 
 async function translateText(text, targetLanguage) {
+    // Lazy initialization
+    if (!initialized) initialize();
+    
     if (!model) {
         throw new Error('Gemini AI is not initialized');
     }
@@ -367,6 +382,9 @@ async function translateText(text, targetLanguage) {
 }
 
 async function generateCreativeContent(type, topic, style = '') {
+    // Lazy initialization
+    if (!initialized) initialize();
+    
     if (!model) {
         throw new Error('Gemini AI is not initialized');
     }
@@ -400,6 +418,9 @@ async function generateCreativeContent(type, topic, style = '') {
 }
 
 async function chatWithContext(messages) {
+    // Lazy initialization
+    if (!initialized) initialize();
+    
     if (!model) {
         throw new Error('Gemini AI is not initialized');
     }
@@ -496,8 +517,8 @@ function formatUsageStats() {
     return output;
 }
 
-// Initialize on module load
-initialize();
+// DO NOT initialize on module load - use lazy initialization instead
+// This allows the module to be required without blocking the event loop
 
 module.exports = {
     generateResponse,
@@ -510,6 +531,9 @@ module.exports = {
     chatWithContext,
     getUsageStats,
     formatUsageStats,
-    isInitialized: () => model !== null,
+    isInitialized: () => {
+        if (!initialized) initialize();
+        return model !== null;
+    },
     isImageGenerationAvailable: () => imageModel !== null || true // Always true because Pollinations is always available
 };
